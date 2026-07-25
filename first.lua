@@ -3,8 +3,7 @@
 -- Morten UI
 
 -- Updated by JSInvasor
--- Lucide icons, sidebar glow, refined category design
--- White theme + custom logo
+-- White theme + forced custom logo, no category hover bg
 
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -208,17 +207,14 @@ function Library:New(config)
 		}):Play()
 	end)
 
-	-- Title + Logo (default logo if none provided)
-	local logoImage = config.Image or DEFAULT_LOGO
-	local titleOffset = 18
-	if logoImage then
-		Create("ImageLabel", {
-			Size = UDim2.fromOffset(32, 32), Position = UDim2.fromOffset(12, 11),
-			BackgroundTransparency = 1, Image = logoImage, ScaleType = Enum.ScaleType.Fit,
-			ZIndex = 3, Parent = self.Top
-		}, { Create("UICorner", {CornerRadius = UDim.new(0, 6)}) })
-		titleOffset = 52
-	end
+	-- Title + Logo (forced to DEFAULT_LOGO, ignores config.Image)
+	local logoImage = DEFAULT_LOGO
+	Create("ImageLabel", {
+		Size = UDim2.fromOffset(32, 32), Position = UDim2.fromOffset(12, 11),
+		BackgroundTransparency = 1, Image = logoImage, ScaleType = Enum.ScaleType.Fit,
+		ZIndex = 3, Parent = self.Top
+	}, { Create("UICorner", {CornerRadius = UDim.new(0, 6)}) })
+	local titleOffset = 52
 
 	Create("TextLabel", {
 		Text = config.Title or "Dcus Hub", Font = Enum.Font.GothamBold, TextSize = 18,
@@ -644,7 +640,7 @@ function Library:New(config)
 	end
 
 	-- ============================================
-	-- Section builder (used by both Category tabs and standalone tabs)
+	-- Section builder
 	-- ============================================
 	local function CreateSection(Page, UpdateCanvasSize, config)
 		local sectionName = config.Name or config.Title or "Section"
@@ -806,7 +802,7 @@ function Library:New(config)
 		end)
 
 		CH.MouseEnter:Connect(function() TweenService:Create(CT, TweenInfo.new(0.15), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play() end)
-        CH.MouseLeave:Connect(function() TweenService:Create(CT, TweenInfo.new(0.15), {TextColor3 = catExpanded and Color3.fromRGB(225, 225, 235) or Color3.fromRGB(150, 150, 165)}):Play() end) end)
+		CH.MouseLeave:Connect(function() TweenService:Create(CT, TweenInfo.new(0.15), {TextColor3 = catExpanded and Color3.fromRGB(225, 225, 235) or Color3.fromRGB(150, 150, 165)}):Play() end)
 
 		function Category:NewTab(name)
 			local Tab = {}
@@ -878,7 +874,7 @@ function Library:New(config)
 	end
 
 	-- ============================================
-	-- NewTab (backward compatible, no category)
+	-- NewTab (backward compatible)
 	-- ============================================
 	function self:NewTab(name)
 		local Tab = {}
