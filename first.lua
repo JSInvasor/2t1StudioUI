@@ -3,7 +3,7 @@
 -- Morten UI
 
 -- Updated by JSInvasor
--- White theme + forced custom logo, no category hover bg, grid corner fix
+-- White theme + forced custom logo, no category hover bg, grid corner fix (safe method)
 
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -49,9 +49,10 @@ local function CreateGridBackground(parent, config)
 		ClipsDescendants = true,
 		ZIndex = 1,
 		Parent = parent
-	}, {
-		Create("UICorner", {CornerRadius = UDim.new(0, 12)})
 	})
+	local gridCorner = Instance.new("UICorner")
+	gridCorner.CornerRadius = UDim.new(0, 12)
+	gridCorner.Parent = gridContainer
 	for i = 0, math.ceil(400 / spacing) + 1 do
 		Create("Frame", {
 			Size = UDim2.new(1, 0, 0, lineThickness),
@@ -582,7 +583,7 @@ function Library:New(config)
 			local callback = config.Callback or function() end
 			local BxBg = Create("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = Color3.fromRGB(22, 22, 30), ZIndex = 5, Parent = parentFrame}, {Create("UICorner", {CornerRadius = UDim.new(0, 8)}), Create("UIStroke", {Color = Color3.fromRGB(55, 55, 65), Thickness = 1})})
 			Create("TextLabel", {Text = text, Font = Enum.Font.GothamMedium, TextSize = 13, TextColor3 = Color3.fromRGB(210, 210, 220), BackgroundTransparency = 1, Position = UDim2.fromOffset(15, 0), Size = UDim2.new(1, -80, 1, 0), TextXAlignment = "Left", ZIndex = 6, Parent = BxBg})
-			local IH = Create("Frame", {Size = UDim2.new(0, 60, 0, 26), Position = UDim2.new(1, -75, 0.5, -13), BackgroundColor3 = Color3.fromRGB(15, 15, 20), ClipsDescendants = true, ZIndex = 6, Parent = BxBg}, {Create("UICorner", {CornerRadius = UDim.new(0, 6)}), Create("UIStroke", {Color = Color3.fromRGB(60, 60, 70), Thickness = 1})})
+			local IH = Create("Frame", {Size = UDim2.new(0, 60, 0, 26), Position = UDim2.new(1, -75, 0.5, -13), BackgroundColor3 = Color3.fromRGB(15, 15, 20), ClipsDescendants = true, ZIndex = 6, Parent = BxBg}, {Create("UICorner", {CornerRadius = UDim.new(0, 6)}), Create("UIStroke", {Color = Color3.fromRGB(50, 50, 70), Thickness = 1})})
 			local Inp = Create("TextBox", {Text = "", PlaceholderText = placeholder, Font = Enum.Font.GothamMedium, TextSize = 11, TextColor3 = Color3.fromRGB(255, 255, 255), BackgroundTransparency = 1, Size = UDim2.new(1, -10, 1, 0), Position = UDim2.fromOffset(5, 0), TextXAlignment = "Center", ZIndex = 7, Parent = IH})
 			local Lbl = BxBg:FindFirstChild("TextLabel")
 			Inp.Focused:Connect(function()
@@ -592,7 +593,7 @@ function Library:New(config)
 			end)
 			Inp.FocusLost:Connect(function(ep)
 				TweenService:Create(IH, TweenInfo.new(0.4, Enum.EasingStyle.Quart), {Size = UDim2.new(0, 60, 0, 26), Position = UDim2.new(1, -75, 0.5, -13)}):Play()
-				TweenService:Create(IH:FindFirstChildOfClass("UIStroke"), TweenInfo.new(0.4), {Color = Color3.fromRGB(60, 60, 70)}):Play()
+				TweenService:Create(IH:FindFirstChildOfClass("UIStroke"), TweenInfo.new(0.4), {Color = Color3.fromRGB(50, 50, 70)}):Play()
 				if Lbl then TweenService:Create(Lbl, TweenInfo.new(0.4), {TextTransparency = 0}):Play() end
 				callback(Inp.Text, ep)
 			end)
@@ -903,4 +904,26 @@ function Library:New(config)
 		})
 		local PL = Page:FindFirstChildOfClass("UIListLayout")
 		local function UCS() Page.CanvasSize = UDim2.new(0, 0, 0, PL.AbsoluteContentSize.Y + 15) end
-		PL:GetPropertyChangedSignal("AbsoluteConten
+		PL:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(UCS); task.spawn(UCS)
+		TabBtn.MouseButton1Click:Connect(function()
+			for _, p in pairs(self.Pages:GetChildren()) do if p:IsA("ScrollingFrame") then p.Visible = false end end
+			for _, bg in pairs(self.TabHolder:GetChildren()) do
+				if bg:IsA("Frame") and bg:FindFirstChild("Frame") then
+					local b = bg:FindFirstChildOfClass("TextButton"); local d = bg:FindFirstChild("Frame")
+					if b then TweenService:Create(b, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(160, 160, 170)}):Play() end
+					if d then TweenService:Create(d, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(160, 160, 170)}):Play() end
+				end
+			end
+			Page.Visible = true
+			TweenService:Create(TabBtn, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+			TweenService:Create(Dot, TweenInfo.new(0.2), {ImageColor3 = ACCENT}):Play()
+		end)
+		CreateElementMethods(Tab, Page, UCS)
+		function Tab:Section(cfg) return CreateSection(Page, UCS, cfg) end
+		return Tab
+	end
+
+	return self
+end
+
+return Library
