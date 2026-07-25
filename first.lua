@@ -42,24 +42,37 @@ local function CreateGridBackground(parent, config)
 	local lineThickness = config.LineThickness or 1
 	local spacing = config.Spacing or 18
 	local lineTransparency = config.LineTransparency or 0.5
-	local margin = 12 -- corner radius kadar
+
+	-- Clipping container, Main'den 2px içeride, kendi corner'i var
+	local clip = Create("Frame", {
+		Name = "GridClip",
+		Size = UDim2.new(1, -4, 1, -4),
+		Position = UDim2.fromOffset(2, 2),
+		BackgroundTransparency = 1,
+		ClipsDescendants = true,
+		ZIndex = 1,
+		Parent = parent
+	})
+	local clipCorner = Instance.new("UICorner")
+	clipCorner.CornerRadius = UDim.new(0, 11)
+	clipCorner.Parent = clip
 
 	for i = 0, math.ceil(400 / spacing) + 1 do
 		Create("Frame", {
 			Name = "GridHLine",
-			Size = UDim2.new(1, -margin*2, 0, lineThickness),
-			Position = UDim2.new(0, margin, 0, i * spacing),
+			Size = UDim2.new(1, 0, 0, lineThickness),
+			Position = UDim2.new(0, 0, 0, i * spacing),
 			BackgroundColor3 = gridColor, BackgroundTransparency = lineTransparency,
-			BorderSizePixel = 0, ZIndex = 1, Parent = parent
+			BorderSizePixel = 0, ZIndex = 1, Parent = clip
 		})
 	end
 	for i = 0, math.ceil(600 / spacing) + 1 do
 		Create("Frame", {
 			Name = "GridVLine",
-			Size = UDim2.new(0, lineThickness, 1, -margin*2),
-			Position = UDim2.new(0, i * spacing, 0, margin),
+			Size = UDim2.new(0, lineThickness, 1, 0),
+			Position = UDim2.new(0, i * spacing, 0, 0),
 			BackgroundColor3 = gridColor, BackgroundTransparency = lineTransparency,
-			BorderSizePixel = 0, ZIndex = 1, Parent = parent
+			BorderSizePixel = 0, ZIndex = 1, Parent = clip
 		})
 	end
 end
