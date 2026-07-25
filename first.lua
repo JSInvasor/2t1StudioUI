@@ -42,11 +42,13 @@ local function CreateGridBackground(parent, config)
 	local lineThickness = config.LineThickness or 1
 	local spacing = config.Spacing or 18
 	local lineTransparency = config.LineTransparency or 0.5
+	local margin = 12 -- corner radius kadar
+
 	for i = 0, math.ceil(400 / spacing) + 1 do
 		Create("Frame", {
 			Name = "GridHLine",
-			Size = UDim2.new(1, 0, 0, lineThickness),
-			Position = UDim2.new(0, 0, 0, i * spacing),
+			Size = UDim2.new(1, -margin*2, 0, lineThickness),
+			Position = UDim2.new(0, margin, 0, i * spacing),
 			BackgroundColor3 = gridColor, BackgroundTransparency = lineTransparency,
 			BorderSizePixel = 0, ZIndex = 1, Parent = parent
 		})
@@ -54,8 +56,8 @@ local function CreateGridBackground(parent, config)
 	for i = 0, math.ceil(600 / spacing) + 1 do
 		Create("Frame", {
 			Name = "GridVLine",
-			Size = UDim2.new(0, lineThickness, 1, 0),
-			Position = UDim2.new(0, i * spacing, 0, 0),
+			Size = UDim2.new(0, lineThickness, 1, -margin*2),
+			Position = UDim2.new(0, i * spacing, 0, margin),
 			BackgroundColor3 = gridColor, BackgroundTransparency = lineTransparency,
 			BorderSizePixel = 0, ZIndex = 1, Parent = parent
 		})
