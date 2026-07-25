@@ -398,31 +398,48 @@ function Library:New(config)
 			end)
 		end
 
-		function target:Toggle(config)
+function target:Toggle(config)
 			local text = config.Name or "Toggle"
 			local callback = config.Callback or function() end
 			local state = config.Default or false
 			local TglBg = Create("Frame", {
-				Size = UDim2.new(1, 0, 0, 45), BackgroundColor3 = Color3.fromRGB(22, 22, 30), ZIndex = 5, Parent = parentFrame
+				Size = UDim2.new(1, 0, 0, 45), BackgroundColor3 = Color3.fromRGB(24, 24, 32), ZIndex = 5, Parent = parentFrame
 			}, { Create("UICorner", {CornerRadius = UDim.new(0, 8)}), Create("UIStroke", {Color = Color3.fromRGB(55, 55, 65), Thickness = 1}) })
+			Create("UIGradient", {
+				Rotation = 90,
+				Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 40)),
+					ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 27))
+				}),
+				Parent = TglBg
+			})
 			Create("TextLabel", {
 				Text = text, Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = Color3.fromRGB(210, 210, 220),
 				BackgroundTransparency = 1, Position = UDim2.fromOffset(15, 0), Size = UDim2.new(1, -70, 1, 0),
 				TextXAlignment = "Left", ZIndex = 6, Parent = TglBg
 			})
 			local Switch = Create("Frame", {
-				Size = UDim2.fromOffset(40, 20), Position = UDim2.new(1, -50, 0.5, -10),
-				BackgroundColor3 = state and ACCENT or Color3.fromRGB(45, 45, 55), ZIndex = 6, Parent = TglBg
-			}, { Create("UICorner", {CornerRadius = UDim.new(1, 0)}), Create("UIStroke", {Color = Color3.fromRGB(70, 70, 80), Thickness = 1}) })
+				Size = UDim2.fromOffset(38, 18), Position = UDim2.new(1, -50, 0.5, -9),
+				BackgroundColor3 = state and Color3.fromRGB(235, 235, 240) or Color3.fromRGB(50, 50, 62), ZIndex = 6, Parent = TglBg
+			}, { Create("UICorner", {CornerRadius = UDim.new(1, 0)}) })
+			local SwitchStroke = Create("UIStroke", {
+				Color = state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(70, 70, 82),
+				Thickness = 1, Transparency = 0.3, Parent = Switch
+			})
 			local Knob = Create("Frame", {
-				Size = UDim2.fromOffset(16, 16), Position = state and UDim2.fromOffset(22, 2) or UDim2.fromOffset(2, 2),
-				BackgroundColor3 = state and Color3.fromRGB(30, 30, 35) or Color3.fromRGB(255, 255, 255), ZIndex = 7, Parent = Switch
+				Size = UDim2.fromOffset(14, 14), Position = state and UDim2.fromOffset(22, 2) or UDim2.fromOffset(2, 2),
+				BackgroundColor3 = state and Color3.fromRGB(20, 20, 27) or Color3.fromRGB(180, 180, 195), ZIndex = 7, Parent = Switch
 			}, { Create("UICorner", {CornerRadius = UDim.new(1, 0)}) })
 			local function updateView(val)
-				TweenService:Create(Switch, TweenInfo.new(0.2), {BackgroundColor3 = val and ACCENT or Color3.fromRGB(45, 45, 55)}):Play()
-				TweenService:Create(Knob, TweenInfo.new(0.2), {
+				TweenService:Create(Switch, TweenInfo.new(0.25, Enum.EasingStyle.Quart), {
+					BackgroundColor3 = val and Color3.fromRGB(235, 235, 240) or Color3.fromRGB(50, 50, 62)
+				}):Play()
+				TweenService:Create(SwitchStroke, TweenInfo.new(0.25), {
+					Color = val and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(70, 70, 82)
+				}):Play()
+				TweenService:Create(Knob, TweenInfo.new(0.25, Enum.EasingStyle.Back), {
 					Position = val and UDim2.fromOffset(22, 2) or UDim2.fromOffset(2, 2),
-					BackgroundColor3 = val and Color3.fromRGB(30, 30, 35) or Color3.fromRGB(255, 255, 255)
+					BackgroundColor3 = val and Color3.fromRGB(20, 20, 27) or Color3.fromRGB(180, 180, 195)
 				}):Play()
 			end
 			local Hit = Create("TextButton", {Text = "", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 10, Parent = TglBg})
