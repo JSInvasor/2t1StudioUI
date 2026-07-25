@@ -3,7 +3,7 @@
 -- Morten UI
 
 -- Updated by JSInvasor
--- White theme + forced custom logo, no category hover bg, grid corner fix (safe method)
+-- White theme + forced custom logo, no category hover bg, grid clipping fix
 
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -42,34 +42,24 @@ local function CreateGridBackground(parent, config)
 	local lineThickness = config.LineThickness or 1
 	local spacing = config.Spacing or 18
 	local lineTransparency = config.LineTransparency or 0.5
-	local gridContainer = Create("Frame", {
-		Name = "GridBackground",
-		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		ClipsDescendants = true,
-		ZIndex = 1,
-		Parent = parent
-	})
-	local gridCorner = Instance.new("UICorner")
-	gridCorner.CornerRadius = UDim.new(0, 12)
-	gridCorner.Parent = gridContainer
 	for i = 0, math.ceil(400 / spacing) + 1 do
 		Create("Frame", {
+			Name = "GridHLine",
 			Size = UDim2.new(1, 0, 0, lineThickness),
 			Position = UDim2.new(0, 0, 0, i * spacing),
 			BackgroundColor3 = gridColor, BackgroundTransparency = lineTransparency,
-			BorderSizePixel = 0, ZIndex = 1, Parent = gridContainer
+			BorderSizePixel = 0, ZIndex = 1, Parent = parent
 		})
 	end
 	for i = 0, math.ceil(600 / spacing) + 1 do
 		Create("Frame", {
+			Name = "GridVLine",
 			Size = UDim2.new(0, lineThickness, 1, 0),
 			Position = UDim2.new(0, i * spacing, 0, 0),
 			BackgroundColor3 = gridColor, BackgroundTransparency = lineTransparency,
-			BorderSizePixel = 0, ZIndex = 1, Parent = gridContainer
+			BorderSizePixel = 0, ZIndex = 1, Parent = parent
 		})
 	end
-	return gridContainer
 end
 
 -- ============================================
