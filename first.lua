@@ -805,8 +805,8 @@ function Library:New(config)
 			UpdateCatSize()
 		end)
 
-		CH.MouseEnter:Connect(function() TweenService:Create(CT, TweenInfo.new(0.15), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play(); TweenService:Create(CH, TweenInfo.new(0.15), {BackgroundTransparency = 0.7}):Play() end)
-		CH.MouseLeave:Connect(function() TweenService:Create(CT, TweenInfo.new(0.15), {TextColor3 = catExpanded and Color3.fromRGB(225, 225, 235) or Color3.fromRGB(150, 150, 165)}):Play(); TweenService:Create(CH, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play() end)
+		CH.MouseEnter:Connect(function() TweenService:Create(CT, TweenInfo.new(0.15), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play() end)
+        CH.MouseLeave:Connect(function() TweenService:Create(CT, TweenInfo.new(0.15), {TextColor3 = catExpanded and Color3.fromRGB(225, 225, 235) or Color3.fromRGB(150, 150, 165)}):Play() end) end)
 
 		function Category:NewTab(name)
 			local Tab = {}
