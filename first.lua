@@ -3,7 +3,7 @@
 -- Morten UI
 
 -- Updated by JSInvasor
--- White theme + forced custom logo, no category hover bg
+-- White theme + forced custom logo, no category hover bg, grid corner fix
 
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -49,6 +49,8 @@ local function CreateGridBackground(parent, config)
 		ClipsDescendants = true,
 		ZIndex = 1,
 		Parent = parent
+	}, {
+		Create("UICorner", {CornerRadius = UDim.new(0, 12)})
 	})
 	for i = 0, math.ceil(400 / spacing) + 1 do
 		Create("Frame", {
@@ -207,7 +209,7 @@ function Library:New(config)
 		}):Play()
 	end)
 
-	-- Title + Logo (forced to DEFAULT_LOGO, ignores config.Image)
+	-- Title + Logo (forced to DEFAULT_LOGO)
 	local logoImage = DEFAULT_LOGO
 	Create("ImageLabel", {
 		Size = UDim2.fromOffset(32, 32), Position = UDim2.fromOffset(12, 11),
@@ -901,26 +903,4 @@ function Library:New(config)
 		})
 		local PL = Page:FindFirstChildOfClass("UIListLayout")
 		local function UCS() Page.CanvasSize = UDim2.new(0, 0, 0, PL.AbsoluteContentSize.Y + 15) end
-		PL:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(UCS); task.spawn(UCS)
-		TabBtn.MouseButton1Click:Connect(function()
-			for _, p in pairs(self.Pages:GetChildren()) do if p:IsA("ScrollingFrame") then p.Visible = false end end
-			for _, bg in pairs(self.TabHolder:GetChildren()) do
-				if bg:IsA("Frame") and bg:FindFirstChild("Frame") then
-					local b = bg:FindFirstChildOfClass("TextButton"); local d = bg:FindFirstChild("Frame")
-					if b then TweenService:Create(b, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(160, 160, 170)}):Play() end
-					if d then TweenService:Create(d, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(160, 160, 170)}):Play() end
-				end
-			end
-			Page.Visible = true
-			TweenService:Create(TabBtn, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
-			TweenService:Create(Dot, TweenInfo.new(0.2), {ImageColor3 = ACCENT}):Play()
-		end)
-		CreateElementMethods(Tab, Page, UCS)
-		function Tab:Section(cfg) return CreateSection(Page, UCS, cfg) end
-		return Tab
-	end
-
-	return self
-end
-
-return Library
+		PL:GetPropertyChangedSignal("AbsoluteConten
