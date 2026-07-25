@@ -398,59 +398,39 @@ function Library:New(config)
 			end)
 		end
 
-function target:Toggle(config)
+		function target:Toggle(config)
 			local text = config.Name or "Toggle"
 			local callback = config.Callback or function() end
 			local state = config.Default or false
 			local TglBg = Create("Frame", {
-				Size = UDim2.new(1, 0, 0, 45), BackgroundColor3 = Color3.fromRGB(24, 24, 32), ZIndex = 5, Parent = parentFrame
+				Size = UDim2.new(1, 0, 0, 45), BackgroundColor3 = Color3.fromRGB(22, 22, 30), ZIndex = 5, Parent = parentFrame
 			}, { Create("UICorner", {CornerRadius = UDim.new(0, 8)}), Create("UIStroke", {Color = Color3.fromRGB(55, 55, 65), Thickness = 1}) })
-			Create("UIGradient", {
-				Rotation = 90,
-				Color = ColorSequence.new({
-					ColorSequenceKeypoint.new(0, Color3.fromRGB(32, 32, 42)),
-					ColorSequenceKeypoint.new(1, Color3.fromRGB(22, 22, 29))
-				}),
-				Parent = TglBg
-			})
 			Create("TextLabel", {
-				Text = text, Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = Color3.fromRGB(215, 215, 225),
+				Text = text, Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = Color3.fromRGB(210, 210, 220),
 				BackgroundTransparency = 1, Position = UDim2.fromOffset(15, 0), Size = UDim2.new(1, -70, 1, 0),
 				TextXAlignment = "Left", ZIndex = 6, Parent = TglBg
 			})
-			-- Track
-			local Switch = Create("Frame", {
-				Size = UDim2.fromOffset(44, 24), Position = UDim2.new(1, -56, 0.5, -12),
-				BackgroundColor3 = state and Color3.fromRGB(240, 240, 245) or Color3.fromRGB(48, 48, 60), ZIndex = 6, Parent = TglBg
+			-- Track (slider tray gibi ince cizgi)
+			local Tray = Create("Frame", {
+				Size = UDim2.fromOffset(34, 4), Position = UDim2.new(1, -50, 0.5, -2),
+				BackgroundColor3 = state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(55, 55, 65), ZIndex = 6, Parent = TglBg
 			}, { Create("UICorner", {CornerRadius = UDim.new(1, 0)}) })
-			local SwitchStroke = Create("UIStroke", {
-				Color = state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(75, 75, 90),
-				Thickness = 1.2, Transparency = 0.4, Parent = Switch
-			})
-			-- Knob shadow (hafif derinlik)
-			local KnobShadow = Create("Frame", {
-				Size = UDim2.fromOffset(18, 18), Position = state and UDim2.fromOffset(23, 4) or UDim2.fromOffset(3, 4),
-				BackgroundColor3 = Color3.fromRGB(0, 0, 0), BackgroundTransparency = 0.7, ZIndex = 6, Parent = Switch
-			}, { Create("UICorner", {CornerRadius = UDim.new(1, 0)}) })
-			-- Knob
+			-- Knob (slider knob gibi top)
 			local Knob = Create("Frame", {
-				Size = UDim2.fromOffset(18, 18), Position = state and UDim2.fromOffset(23, 3) or UDim2.fromOffset(3, 3),
-				BackgroundColor3 = state and Color3.fromRGB(28, 28, 36) or Color3.fromRGB(240, 240, 248), ZIndex = 8, Parent = Switch
-			}, { Create("UICorner", {CornerRadius = UDim.new(1, 0)}) })
+				Size = UDim2.fromOffset(12, 12), AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = state and UDim2.fromScale(1, 0.5) or UDim2.fromScale(0, 0.5),
+				BackgroundColor3 = Color3.fromRGB(22, 22, 30), ZIndex = 8, Parent = Tray
+			}, { Create("UICorner", {CornerRadius = UDim.new(1, 0)}), Create("UIStroke", {Color = state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(55, 55, 65), Thickness = 1.5}) })
+			local KnobStroke = Knob:FindFirstChildOfClass("UIStroke")
 			local function updateView(val)
-				local ti = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-				TweenService:Create(Switch, TweenInfo.new(0.25, Enum.EasingStyle.Quart), {
-					BackgroundColor3 = val and Color3.fromRGB(240, 240, 245) or Color3.fromRGB(48, 48, 60)
+				TweenService:Create(Tray, TweenInfo.new(0.2), {
+					BackgroundColor3 = val and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(55, 55, 65)
 				}):Play()
-				TweenService:Create(SwitchStroke, TweenInfo.new(0.25), {
-					Color = val and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(75, 75, 90)
+				TweenService:Create(Knob, TweenInfo.new(0.25, Enum.EasingStyle.Quart), {
+					Position = val and UDim2.fromScale(1, 0.5) or UDim2.fromScale(0, 0.5)
 				}):Play()
-				TweenService:Create(Knob, ti, {
-					Position = val and UDim2.fromOffset(23, 3) or UDim2.fromOffset(3, 3),
-					BackgroundColor3 = val and Color3.fromRGB(28, 28, 36) or Color3.fromRGB(240, 240, 248)
-				}):Play()
-				TweenService:Create(KnobShadow, ti, {
-					Position = val and UDim2.fromOffset(23, 4) or UDim2.fromOffset(3, 4)
+				TweenService:Create(KnobStroke, TweenInfo.new(0.2), {
+					Color = val and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(55, 55, 65)
 				}):Play()
 			end
 			local Hit = Create("TextButton", {Text = "", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 10, Parent = TglBg})
