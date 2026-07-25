@@ -3,7 +3,7 @@
 -- Morten UI
 
 -- Updated by JSInvasor
--- White theme + forced custom logo, no category hover bg, grid clipping fix
+-- White theme + forced custom logo, grid clip fix, no section divider
 
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -43,7 +43,6 @@ local function CreateGridBackground(parent, config)
 	local spacing = config.Spacing or 18
 	local lineTransparency = config.LineTransparency or 0.5
 
-	-- Clipping container, Main'den 2px içeride, kendi corner'i var
 	local clip = Create("Frame", {
 		Name = "GridClip",
 		Size = UDim2.new(1, -4, 1, -4),
@@ -648,7 +647,7 @@ function Library:New(config)
 	end
 
 	-- ============================================
-	-- Section builder
+	-- Section builder (no divider)
 	-- ============================================
 	local function CreateSection(Page, UpdateCanvasSize, config)
 		local sectionName = config.Name or config.Title or "Section"
@@ -690,12 +689,6 @@ function Library:New(config)
 			HB.Size = UDim2.new(1, 0, 0, 48); headerHeight = 48
 		end
 
-		local HD = Create("Frame", {
-			Size = UDim2.new(1, -16, 0, 1), Position = UDim2.fromOffset(8, headerHeight),
-			BackgroundColor3 = Color3.fromRGB(55, 55, 65), BackgroundTransparency = sExpanded and 0 or 1,
-			BorderSizePixel = 0, ZIndex = 7, Parent = SC
-		})
-
 		local CH = Create("Frame", {
 			Size = UDim2.new(1, -16, 0, 0), Position = UDim2.fromOffset(8, headerHeight + 4),
 			BackgroundTransparency = 1, ZIndex = 6, Parent = SC
@@ -708,7 +701,6 @@ function Library:New(config)
 		local function USS()
 			local ch = CL.AbsoluteContentSize.Y + 12
 			TweenService:Create(SC, TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, sExpanded and (headerHeight + 4 + ch) or headerHeight)}):Play()
-			TweenService:Create(HD, TweenInfo.new(0.2), {BackgroundTransparency = sExpanded and 0 or 1}):Play()
 			task.delay(0.4, UpdateCanvasSize)
 		end
 
