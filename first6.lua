@@ -1183,18 +1183,6 @@ local function MakeIcon(parent, ref, size, colour, z)
 	return handle
 end
 
-Library.MakeIcon = function(_, parent, ref, size, colour, z)
-	return MakeIcon(parent, ref, size, colour, z)
-end
-
-Library.VectorIcons = VECTOR_ICONS
-
-function Library:ListIcons()
-	local out = {}
-	for name in pairs(VECTOR_ICONS) do out[#out + 1] = name end
-	table.sort(out)
-	return out
-end
 
 local DEFAULT_CATEGORY_ICONS = {
 	["Main"] = "puzzle",   ["Combat"]   = "sword",   ["Player"]   = "run",
@@ -1237,6 +1225,18 @@ Library._registry    = {}    -- searchable elements for palette
 Library.Icons        = ICONS
 Library.Themes       = PALETTES
 Library.ThemeOrder   = THEME_ORDER
+Library.VectorIcons  = VECTOR_ICONS
+
+Library.MakeIcon = function(_, parent, ref, size, colour, z)
+	return MakeIcon(parent, ref, size, colour, z)
+end
+
+function Library:ListIcons()
+	local out = {}
+	for name in pairs(VECTOR_ICONS) do out[#out + 1] = name end
+	table.sort(out)
+	return out
+end
 
 -- ============================================
 -- THEME SWITCHING
@@ -4190,6 +4190,7 @@ function Library:New(config)
 			local selected = multi and {} or nil
 			local rowH = 28
 			local optButtons = {}
+			local optChecks = {}
 
 			local bg = Create("Frame", {
 				Size = UDim2.new(1, 0, 0, 42), BackgroundColor3 = T.bgElement,
@@ -4223,11 +4224,12 @@ function Library:New(config)
 				end
 			end
 
-			local arrow = Create("ImageLabel", {
-				Image = "arrowupdown", Size = UDim2.fromOffset(13, 13),
-				Position = UDim2.new(1, -28, 0.5, -6.5), BackgroundTransparency = 1,
-				ImageColor3 = T.textDim, ScaleType = Enum.ScaleType.Fit, ZIndex = 7, Parent = header
-			})
+			local arrowH = MakeIcon(header, "chevronup", 13, T.textDim, 7)
+			local arrow = arrowH and arrowH.Frame
+			if arrow then
+				arrow.Position = UDim2.new(1, -28, 0.5, -6.5)
+				arrow.Rotation = 0
+			end
 
 			local optHolder = Create("Frame", {
 				Size = UDim2.new(1, -20, 0, #list * (rowH + 2)),
@@ -4251,14 +4253,14 @@ function Library:New(config)
 					local on = multi and (selected[value] == true) or (selected == value)
 					local box = btn:FindFirstChild("Box")
 					local lbl = btn:FindFirstChild("Label")
-					local check = box and box:FindFirstChild("Check")
 					if lbl then Tween(lbl, 0.15, { TextColor3 = on and Color3.fromRGB(250, 250, 255) or T.textDim }) end
 					if box then
 						Tween(box, 0.15, { BackgroundColor3 = on and T.accent or Color3.fromRGB(38, 38, 48) })
 						local bs = box:FindFirstChildOfClass("UIStroke")
 						if bs then Tween(bs, 0.15, { Color = on and T.accent or T.stroke }) end
 					end
-					if check then check.ImageTransparency = on and 0 or 1 end
+					local check = optChecks[value]
+					if check then check:SetTransparency(on and 0 or 1) end
 				end
 			end
 
@@ -4285,6 +4287,7 @@ function Library:New(config)
 					if c:IsA("TextButton") then c:Destroy() end
 				end
 				optButtons = {}
+				optChecks = {}
 
 				for i, value in ipairs(list) do
 					local opt = Create("TextButton", {
@@ -4303,12 +4306,13 @@ function Library:New(config)
 						Create("UIStroke", { Color = T.stroke, Thickness = 1 })
 					})
 
-					Create("ImageLabel", {
-						Name = "Check", Image = "check", Size = UDim2.fromOffset(10, 10),
-						Position = UDim2.fromOffset(2, 2), BackgroundTransparency = 1,
-						ImageColor3 = Color3.fromRGB(20, 20, 28), ImageTransparency = 1,
-						ScaleType = Enum.ScaleType.Fit, ZIndex = 10, Parent = box
-					})
+					local checkH = MakeIcon(box, "check", 10, Color3.fromRGB(20, 20, 28), 10)
+					if checkH then
+						checkH.Frame.Name = "Check"
+						checkH.Frame.Position = UDim2.fromOffset(2, 2)
+						checkH:SetTransparency(1)
+					end
+					optChecks[value] = checkH
 
 					Create("TextLabel", {
 						Name = "Label", Text = tostring(value), Font = Enum.Font.GothamMedium,
@@ -4337,7 +4341,7 @@ function Library:New(config)
 				expanded = not expanded
 				local h = expanded and (42 + #list * (rowH + 2) + 10) or 42
 				Tween(bg, 0.35, { Size = UDim2.new(1, 0, 0, h) })
-				Tween(arrow, 0.35, { Rotation = expanded and 90 or 0 })
+				if arrow then Tween(arrow, 0.35, { Rotation = expanded and 180 or 0 }) end
 				task.delay(0.4, updateCanvas)
 			end)
 
@@ -5237,7 +5241,7 @@ function Library:New(config)
 		local sectionExpand = function()
 			if not expanded then
 				expanded = true
-				Tween(SA, 0.35, { Rotation = 90 })
+				if SA then Tween(SA, 0.35, { Rotation = 180 }) end
 				UpdateSize()
 			end
 		end
@@ -5417,7 +5421,7 @@ function Library:New(config)
 			TB.MouseLeave:Connect(function()
 				if Window._activeTabBtn ~= TB then
 					Tween(TB, 0.15, { TextColor3 = Color3.fromRGB(140, 140, 155) })
-					Tween(Dot, 0.15, { ImageColor3 = Color3.fromRGB(60, 60, 72) })
+					if DotH then DotH:SetColor(T.stroke, 0.15) end
 				end
 			end)
 
