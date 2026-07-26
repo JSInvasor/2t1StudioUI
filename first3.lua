@@ -443,10 +443,10 @@ end
 -- NOTIFICATIONS  (+ history)
 -- ============================================
 local NOTIF_STYLES = {
-	info    = { color = BLUE,   icon = ICONS.Info },
-	success = { color = GREEN,  icon = ICONS.Check },
-	error   = { color = RED,    icon = ICONS.Alert },
-	warning = { color = YELLOW, icon = ICONS.Alert },
+	info    = { color = BLUE,   bg = Color3.fromRGB(17, 23, 36), stroke = Color3.fromRGB(52, 78, 128) },
+	success = { color = GREEN,  bg = Color3.fromRGB(15, 29, 23), stroke = Color3.fromRGB(44, 104, 70) },
+	error   = { color = RED,    bg = Color3.fromRGB(32, 17, 21), stroke = Color3.fromRGB(124, 48, 56) },
+	warning = { color = YELLOW, bg = Color3.fromRGB(32, 27, 15), stroke = Color3.fromRGB(122, 98, 42) },
 }
 
 function Library:Notify(cfg)
@@ -457,7 +457,6 @@ function Library:Notify(cfg)
 	local kind     = (cfg.Type or "info"):lower()
 	local style    = NOTIF_STYLES[kind] or NOTIF_STYLES.info
 
-	-- history
 	table.insert(Library._notifLog, 1, {
 		Title = title, Content = content, Type = kind,
 		Time = os.date("%H:%M:%S"), Stamp = os.time()
@@ -478,8 +477,8 @@ function Library:Notify(cfg)
 	local holder = gui:FindFirstChild("Holder")
 	if not holder then
 		holder = Create("Frame", {
-			Name = "Holder", Size = UDim2.new(0, 290, 1, -20),
-			Position = UDim2.new(1, -302, 0, 10), BackgroundTransparency = 1, Parent = gui
+			Name = "Holder", Size = UDim2.new(0, 296, 1, -20),
+			Position = UDim2.new(1, -308, 0, 10), BackgroundTransparency = 1, Parent = gui
 		}, {
 			Create("UIListLayout", {
 				VerticalAlignment = Enum.VerticalAlignment.Top,
@@ -490,72 +489,78 @@ function Library:Notify(cfg)
 	end
 
 	local card = Create("Frame", {
-		Size = UDim2.new(1, 0, 0, 0), BackgroundColor3 = BG_MAIN,
+		Size = UDim2.new(1, 0, 0, 0), BackgroundColor3 = style.bg,
 		BackgroundTransparency = 1, BorderSizePixel = 0,
 		ClipsDescendants = true, Parent = holder
 	}, {
-		Create("UICorner", { CornerRadius = UDim.new(0, 9) }),
-		Create("UIStroke", { Color = style.color, Thickness = 1, Transparency = 1 })
+		Create("UICorner", { CornerRadius = UDim.new(0, 10) }),
+		Create("UIStroke", { Color = style.stroke, Thickness = 1.2, Transparency = 1 })
 	})
 	local cardStroke = card:FindFirstChildOfClass("UIStroke")
 
-	local accentBar = Create("Frame", {
-		Size = UDim2.new(0, 3, 1, 0), BackgroundColor3 = style.color,
-		BackgroundTransparency = 1, BorderSizePixel = 0, Parent = card
+	-- subtle vertical sheen so the tint reads as a surface, not flat colour
+	Create("UIGradient", {
+		Rotation = 90,
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(196, 196, 206))
+		}),
+		Parent = card
 	})
 
-	local icon = Create("ImageLabel", {
-		Image = style.icon, Size = UDim2.fromOffset(17, 17),
-		Position = UDim2.fromOffset(14, 12), BackgroundTransparency = 1,
-		ImageColor3 = style.color, ImageTransparency = 1,
+	local logo = Create("ImageLabel", {
+		Image = DEFAULT_LOGO, Size = UDim2.fromOffset(24, 24),
+		Position = UDim2.fromOffset(14, 13), BackgroundTransparency = 1,
+		ImageColor3 = Color3.fromRGB(255, 255, 255), ImageTransparency = 1,
 		ScaleType = Enum.ScaleType.Fit, Parent = card
 	})
 
 	local titleLbl = Create("TextLabel", {
 		Text = title, Font = Enum.Font.GothamBold, TextSize = 13,
 		TextColor3 = style.color, BackgroundTransparency = 1, TextTransparency = 1,
-		Position = UDim2.fromOffset(40, 10), Size = UDim2.new(1, -52, 0, 16),
-		TextXAlignment = Enum.TextXAlignment.Left, Parent = card
+		Position = UDim2.fromOffset(48, 11), Size = UDim2.new(1, -62, 0, 16),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd, Parent = card
 	})
 
 	local bodyLbl = Create("TextLabel", {
 		Text = content, Font = Enum.Font.GothamMedium, TextSize = 12,
-		TextColor3 = TXT_MAIN, BackgroundTransparency = 1, TextTransparency = 1,
-		Position = UDim2.fromOffset(40, 28), Size = UDim2.new(1, -52, 0, 0),
+		TextColor3 = Color3.fromRGB(206, 210, 220), BackgroundTransparency = 1, TextTransparency = 1,
+		Position = UDim2.fromOffset(48, 29), Size = UDim2.new(1, -62, 0, 0),
 		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
 		TextWrapped = true, Parent = card
 	})
 
+	-- inset progress bar so rounded corners stay clean
 	local progressBg = Create("Frame", {
-		Size = UDim2.new(1, 0, 0, 2), Position = UDim2.new(0, 0, 1, -2),
-		BackgroundColor3 = STROKE, BackgroundTransparency = 1,
+		Size = UDim2.new(1, -28, 0, 3), Position = UDim2.new(0, 14, 1, -10),
+		BackgroundColor3 = Color3.fromRGB(255, 255, 255), BackgroundTransparency = 1,
 		BorderSizePixel = 0, Parent = card
-	})
+	}, { Create("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+
 	local progress = Create("Frame", {
 		Size = UDim2.fromScale(1, 1), BackgroundColor3 = style.color,
 		BackgroundTransparency = 1, BorderSizePixel = 0, Parent = progressBg
-	})
+	}, { Create("UICorner", { CornerRadius = UDim.new(1, 0) }) })
 
-	local ts = TextService:GetTextSize(content, 12, Enum.Font.GothamMedium, Vector2.new(238, 10000))
-	local targetH = math.max(52, ts.Y + 42)
-	bodyLbl.Size = UDim2.new(1, -52, 0, ts.Y)
+	local ts = TextService:GetTextSize(content, 12, Enum.Font.GothamMedium, Vector2.new(234, 10000))
+	local targetH = math.max(56, ts.Y + 48)
+	bodyLbl.Size = UDim2.new(1, -62, 0, ts.Y)
 
-	Tween(card, 0.45, { Size = UDim2.new(1, 0, 0, targetH), BackgroundTransparency = 0.05 }, Enum.EasingStyle.Back)
-	Tween(cardStroke, 0.4, { Transparency = 0.35 })
-	Tween(accentBar, 0.4, { BackgroundTransparency = 0 })
-	Tween(icon, 0.4, { ImageTransparency = 0 })
+	Tween(card, 0.45, { Size = UDim2.new(1, 0, 0, targetH), BackgroundTransparency = 0.04 }, Enum.EasingStyle.Back)
+	Tween(cardStroke, 0.4, { Transparency = 0.25 })
+	Tween(logo, 0.4, { ImageTransparency = 0 })
 	Tween(titleLbl, 0.4, { TextTransparency = 0 })
-	Tween(bodyLbl, 0.4, { TextTransparency = 0.1 })
-	Tween(progressBg, 0.4, { BackgroundTransparency = 0.5 })
-	Tween(progress, 0.4, { BackgroundTransparency = 0.2 })
+	Tween(bodyLbl, 0.4, { TextTransparency = 0.08 })
+	Tween(progressBg, 0.4, { BackgroundTransparency = 0.88 })
+	Tween(progress, 0.4, { BackgroundTransparency = 0.15 })
 	Tween(progress, duration, { Size = UDim2.fromScale(0, 1) }, Enum.EasingStyle.Linear)
 
 	task.delay(duration, function()
 		Tween(card, 0.35, { Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1 },
 			Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 		Tween(cardStroke, 0.3, { Transparency = 1 })
-		Tween(accentBar, 0.3, { BackgroundTransparency = 1 })
-		Tween(icon, 0.3, { ImageTransparency = 1 })
+		Tween(logo, 0.3, { ImageTransparency = 1 })
 		Tween(titleLbl, 0.3, { TextTransparency = 1 })
 		Tween(bodyLbl, 0.3, { TextTransparency = 1 })
 		Tween(progressBg, 0.3, { BackgroundTransparency = 1 })
@@ -699,7 +704,7 @@ local function buildHistoryPanel()
 	if HistoryPanel then return HistoryPanel end
 
 	local panel = CreateFloatingPanel({
-		Name = "2t1Studio_History", Title = "Notification Log",
+		Name = "2t1Studio_History", Title = "Notifications",
 		Icon = ICONS.Bell, Width = 300, Height = 340,
 		Position = UDim2.new(1, -330, 0, 60)
 	})
@@ -719,7 +724,7 @@ local function buildHistoryPanel()
 	end)
 
 	local clearBtn = Create("TextButton", {
-		Text = "Clear Log", Font = Enum.Font.GothamBold, TextSize = 11,
+		Text = "Clear history", Font = Enum.Font.GothamBold, TextSize = 11,
 		TextColor3 = TXT_DIM, BackgroundColor3 = Color3.fromRGB(30, 30, 40),
 		BackgroundTransparency = 0.2, AutoButtonColor = false,
 		Size = UDim2.new(1, -12, 0, 28), Position = UDim2.new(0, 6, 1, -34),
@@ -730,7 +735,7 @@ local function buildHistoryPanel()
 	})
 
 	local empty = Create("TextLabel", {
-		Text = "No notifications yet", Font = Enum.Font.GothamMedium, TextSize = 12,
+		Text = "Nothing here yet", Font = Enum.Font.GothamMedium, TextSize = 12,
 		TextColor3 = TXT_FADE, BackgroundTransparency = 1,
 		Size = UDim2.new(1, 0, 0, 40), Position = UDim2.new(0, 0, 0, 40),
 		Visible = false, Parent = panel.Body
@@ -746,38 +751,40 @@ local function buildHistoryPanel()
 			local style = NOTIF_STYLES[entry.Type] or NOTIF_STYLES.info
 
 			local row = Create("Frame", {
-				Size = UDim2.new(1, 0, 0, 46), BackgroundColor3 = BG_ELEMENT,
-				BackgroundTransparency = 0.3, BorderSizePixel = 0,
+				Size = UDim2.new(1, 0, 0, 46), BackgroundColor3 = style.bg,
+				BackgroundTransparency = 0.15, BorderSizePixel = 0,
 				LayoutOrder = i, Parent = scroll
 			}, {
-				Create("UICorner", { CornerRadius = UDim.new(0, 7) }),
-				Create("UIStroke", { Color = STROKE, Thickness = 1, Transparency = 0.6 })
+				Create("UICorner", { CornerRadius = UDim.new(0, 8) }),
+				Create("UIStroke", { Color = style.stroke, Thickness = 1, Transparency = 0.45 })
 			})
 
-			Create("Frame", {
-				Size = UDim2.new(0, 2, 1, -10), Position = UDim2.fromOffset(0, 5),
-				BackgroundColor3 = style.color, BorderSizePixel = 0, Parent = row
-			}, { Create("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+			Create("ImageLabel", {
+				Image = DEFAULT_LOGO, Size = UDim2.fromOffset(16, 16),
+				Position = UDim2.fromOffset(10, 7), BackgroundTransparency = 1,
+				ImageColor3 = Color3.fromRGB(255, 255, 255),
+				ScaleType = Enum.ScaleType.Fit, Parent = row
+			})
 
 			Create("TextLabel", {
 				Text = entry.Title, Font = Enum.Font.GothamBold, TextSize = 11.5,
 				TextColor3 = style.color, BackgroundTransparency = 1,
-				Position = UDim2.fromOffset(10, 6), Size = UDim2.new(1, -60, 0, 14),
+				Position = UDim2.fromOffset(32, 6), Size = UDim2.new(1, -84, 0, 15),
 				TextXAlignment = Enum.TextXAlignment.Left,
 				TextTruncate = Enum.TextTruncate.AtEnd, Parent = row
 			})
 
 			Create("TextLabel", {
 				Text = entry.Time, Font = Enum.Font.Code, TextSize = 10,
-				TextColor3 = TXT_FADE, BackgroundTransparency = 1,
-				Position = UDim2.new(1, -54, 0, 6), Size = UDim2.fromOffset(48, 14),
+				TextColor3 = Color3.fromRGB(150, 155, 168), BackgroundTransparency = 1,
+				Position = UDim2.new(1, -54, 0, 6), Size = UDim2.fromOffset(46, 15),
 				TextXAlignment = Enum.TextXAlignment.Right, Parent = row
 			})
 
 			Create("TextLabel", {
 				Text = entry.Content, Font = Enum.Font.GothamMedium, TextSize = 11,
-				TextColor3 = TXT_DIM, BackgroundTransparency = 1,
-				Position = UDim2.fromOffset(10, 22), Size = UDim2.new(1, -20, 0, 20),
+				TextColor3 = Color3.fromRGB(178, 182, 194), BackgroundTransparency = 1,
+				Position = UDim2.fromOffset(32, 23), Size = UDim2.new(1, -44, 0, 18),
 				TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
 				TextWrapped = true, TextTruncate = Enum.TextTruncate.AtEnd, Parent = row
 			})
@@ -1002,9 +1009,9 @@ local function buildPlayerPanel()
 			if myChar and tChar and myChar:FindFirstChild("HumanoidRootPart")
 			and tChar:FindFirstChild("HumanoidRootPart") then
 				myChar.HumanoidRootPart.CFrame = tChar.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
-				Library:Notify({ Title = "Teleport", Content = plr.DisplayName .. " yanina gidildi", Type = "success", Time = 2 })
+				Library:Notify({ Title = "Teleport", Content = "Teleported to " .. plr.DisplayName, Type = "success", Time = 2 })
 			else
-				Library:Notify({ Title = "Teleport", Content = "Karakter bulunamadi", Type = "error", Time = 2 })
+				Library:Notify({ Title = "Teleport", Content = "Character not found", Type = "error", Time = 2 })
 			end
 		end)
 
@@ -1012,14 +1019,14 @@ local function buildPlayerPanel()
 			local cam = workspace.CurrentCamera
 			if plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") then
 				cam.CameraSubject = plr.Character:FindFirstChildOfClass("Humanoid")
-				Library:Notify({ Title = "Spectate", Content = plr.DisplayName .. " izleniyor", Type = "info", Time = 2 })
+				Library:Notify({ Title = "Spectate", Content = "Now spectating " .. plr.DisplayName, Type = "info", Time = 2 })
 			end
 		end)
 
 		actBtn("COPY", 144, 46, TXT_MAIN, function()
 			if setclipboard then
 				pcall(setclipboard, plr.Name)
-				Library:Notify({ Title = "Kopyalandi", Content = plr.Name, Type = "success", Time = 2 })
+				Library:Notify({ Title = "Copied", Content = plr.Name .. " copied to clipboard", Type = "success", Time = 2 })
 			end
 		end)
 
@@ -1027,7 +1034,7 @@ local function buildPlayerPanel()
 			local cam = workspace.CurrentCamera
 			if Player.Character and Player.Character:FindFirstChildOfClass("Humanoid") then
 				cam.CameraSubject = Player.Character:FindFirstChildOfClass("Humanoid")
-				Library:Notify({ Title = "Kamera", Content = "Kendine dondu", Type = "info", Time = 2 })
+				Library:Notify({ Title = "Camera", Content = "Reset to your character", Type = "info", Time = 2 })
 			end
 		end)
 
@@ -1227,7 +1234,7 @@ function Library:RefreshKeybindPanel()
 	end
 	if #Library.Keybinds == 0 then
 		Create("TextLabel", {
-			Text = "none", Font = Enum.Font.GothamMedium, TextSize = 10,
+			Text = "No binds set", Font = Enum.Font.GothamMedium, TextSize = 10,
 			TextColor3 = TXT_FADE, BackgroundTransparency = 1,
 			Size = UDim2.new(1, 0, 0, 14), Parent = KeybindPanel.Holder
 		})
@@ -2004,12 +2011,12 @@ function Library.SettingManager()
 
 		ui:Keybind({
 			Name = "UI Toggle Key", Flag = "ui_toggle_key", Default = Library.ToggleKey,
-			Tooltip = "Menuyu acip kapatan tus.",
+			Tooltip = "The key that opens and closes this menu.",
 			OnChange = function(new) Library.ToggleKey = new end
 		})
 		ui:Toggle({
 			Name = "Background Blur", Flag = "ui_blur", Default = true,
-			Tooltip = "Menu acikken oyun arka planini bulaniklastirir.",
+			Tooltip = "Blurs the game behind the interface while it is open.",
 			Callback = function(v)
 				Library.BlurEnabled = v
 				if Library._blur then Tween(Library._blur, 0.3, { Size = v and 14 or 0 }) end
@@ -2017,46 +2024,46 @@ function Library.SettingManager()
 		})
 		ui:Toggle({
 			Name = "Animated Background", Flag = "ui_animbg", Default = true,
-			Tooltip = "Grid arka planinin yavas hareketi ve isik gecisi.",
+			Tooltip = "Slow drifting grid and the light sweep behind the panel.",
 			Callback = function(v) Library.AnimatedBG = v end
 		})
 		ui:Toggle({
 			Name = "Tooltips", Flag = "ui_tooltips", Default = true,
-			Tooltip = "Su an okudugun kutucuklar.",
+			Tooltip = "The hint boxes you are reading right now.",
 			Callback = function(v) Library.TooltipsOn = v end
 		})
 		ui:Toggle({
 			Name = "Keybind Panel", Flag = "ui_keybind_panel", Default = false,
-			Tooltip = "Ekranin solunda aktif keybind listesi gosterir.",
+			Tooltip = "Shows a live list of your active keybinds on the left edge.",
 			Callback = function(v) Library:SetKeybindPanel(v) end
 		})
 
 		local panels = tab:Section({ Name = "Panels", Icon = ICONS.Layers, Default = true })
 
 		panels:Button({
-			Name = "Player List", Tooltip = "Sunucudaki oyuncular, mesafe, can ve hizli islemler.",
+			Name = "Player list", Tooltip = "Everyone in the server with distance, health and quick actions.",
 			Callback = function() Library:TogglePlayers() end
 		})
 		panels:Button({
-			Name = "Notification Log", Tooltip = "Kacirdigin bildirimleri zaman damgasiyla gosterir.",
+			Name = "Notification log", Tooltip = "Every notification you received, with timestamps.",
 			Callback = function() Library:ToggleHistory() end
 		})
 		panels:Button({
-			Name = "Command Palette", Tooltip = "Ctrl+K ile de acilir.",
+			Name = "Command Palette", Tooltip = "Also opens with Ctrl+K from anywhere.",
 			Callback = function() Library:OpenPalette() end
 		})
 
 		local misc = tab:Section({ Name = "Interface Actions", Icon = ICONS.Wrench, Default = false })
 
 		misc:Button({
-			Name = "Replay Tour", Tooltip = "Ilk acilistaki tanitim turunu tekrar oynatir.",
+			Name = "Replay Tour", Tooltip = "Play the first-run walkthrough again.",
 			Callback = function()
 				Library:ResetTour()
 				if Library._tourSteps then Library:StartTour(Library._tourSteps) end
 			end
 		})
 		misc:Button({
-			Name = "Unload Interface", Tooltip = "Tum arayuzu kapatir ve temizler.",
+			Name = "Unload Interface", Tooltip = "Close the interface and clean up everything it created.",
 			Callback = function() Library:Unload() end
 		})
 	end
@@ -2154,9 +2161,9 @@ function Library:New(config)
 		AttachTooltip(b, tip)
 		return b
 	end
-	local closeBtn = makeDot(0,  Color3.fromRGB(255, 95, 87),  Color3.fromRGB(200, 70, 60),  "Kapat ve kaldir")
-	local minBtn   = makeDot(22, Color3.fromRGB(255, 189, 46), Color3.fromRGB(200, 150, 30), "Kucult")
-	local maxBtn   = makeDot(44, Color3.fromRGB(40, 205, 65),  Color3.fromRGB(30, 160, 50),  "Tam ekran")
+	local closeBtn = makeDot(0,  Color3.fromRGB(255, 95, 87),  Color3.fromRGB(200, 70, 60),  "Close and unload")
+	local minBtn   = makeDot(22, Color3.fromRGB(255, 189, 46), Color3.fromRGB(200, 150, 30), "Minimise")
+	local maxBtn   = makeDot(44, Color3.fromRGB(40, 205, 65),  Color3.fromRGB(30, 160, 50),  "Maximise")
 
 	local logo = Create("ImageLabel", {
 		Size = UDim2.fromOffset(30, 30), Position = UDim2.fromOffset(14, 14),
@@ -2213,8 +2220,8 @@ function Library:New(config)
 	end
 
 	quickBtn(0,  ICONS.Command, "Command Palette  (Ctrl+K)", function() Library:OpenPalette() end)
-	quickBtn(31, ICONS.Users,   "Player List",               function() Library:TogglePlayers() end)
-	quickBtn(62, ICONS.Bell,    "Notification Log",          function() Library:ToggleHistory() end)
+	quickBtn(31, ICONS.Users,   "Player list",               function() Library:TogglePlayers() end)
+	quickBtn(62, ICONS.Bell,    "Notification log",          function() Library:ToggleHistory() end)
 
 	-- ---------- SEARCH ----------
 	local searchBox = Create("Frame", {
@@ -2240,7 +2247,7 @@ function Library:New(config)
 		Position = UDim2.fromOffset(26, 0), Size = UDim2.new(1, -34, 1, 0),
 		TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7, Parent = searchBox
 	})
-	AttachTooltip(searchBox, "Acik sekmedeki ogeleri filtreler. Tum menude aramak icin Ctrl+K.")
+	AttachTooltip(searchBox, "Filters items on the current tab. Press Ctrl+K to search the whole menu.")
 
 	searchInput.Focused:Connect(function()
 		Tween(searchStroke, 0.25, { Color = ACCENT, Transparency = 0.15 })
@@ -2937,7 +2944,7 @@ function Library:New(config)
 			})
 
 			AddHover(bg, stroke)
-			AttachTooltip(bg, cfg.Tooltip or "Tiklayip yeni bir tus ata.")
+			AttachTooltip(bg, cfg.Tooltip or "Click, then press any key to rebind.")
 
 			hit.MouseButton1Click:Connect(function()
 				listening = true
@@ -3783,67 +3790,67 @@ function Library:New(config)
 	-- BUILT-IN COMMANDS
 	-- ============================================
 	if #Library._commands == 0 then
-		Library:RegisterCommand("Save Config", "Aktif ayarlari kaydet", function()
+		Library:RegisterCommand("Save Config", "Write your current settings to disk", function()
 			local ok = Library:SaveConfig("default")
 			Library:Notify({
 				Title = "Config", Type = ok and "success" or "error",
-				Content = ok and "default kaydedildi" or "Kaydedilemedi", Time = 3
+				Content = ok and "Saved as \"default\"" or "Your executor has no file access", Time = 3
 			})
 		end, ICONS.Download)
 
-		Library:RegisterCommand("Load Config", "Kayitli ayarlari yukle", function()
+		Library:RegisterCommand("Load Config", "Restore your saved settings", function()
 			local ok, n = Library:LoadConfig("default")
 			Library:Notify({
 				Title = "Config", Type = ok and "success" or "error",
-				Content = ok and (n .. " ayar geri yuklendi") or "Config bulunamadi", Time = 3
+				Content = ok and (n .. " settings restored") or "No saved config found", Time = 3
 			})
 		end, ICONS.Layers)
 
-		Library:RegisterCommand("Share Config", "Ayarlari panoya kopyala", function()
+		Library:RegisterCommand("Share Config", "Copy your settings as a shareable code", function()
 			local s = Library:ExportConfig()
 			Library:Notify({
 				Title = "Config Share", Type = s and "success" or "error",
-				Content = s and ("Panoya kopyalandi (" .. #s .. " karakter)") or "Olusturulamadi",
+				Content = s and ("Copied to clipboard (" .. #s .. " characters)") or "Could not build the code",
 				Time = 4
 			})
 		end, ICONS.Copy)
 
-		Library:RegisterCommand("Toggle Player List", "Oyuncu panelini ac/kapat", function()
+		Library:RegisterCommand("Toggle Player List", "Show or hide the player panel", function()
 			Library:TogglePlayers()
 		end, ICONS.Users)
 
-		Library:RegisterCommand("Notification Log", "Bildirim gecmisini ac", function()
+		Library:RegisterCommand("Notification Log", "Open the notification history", function()
 			Library:ToggleHistory()
 		end, ICONS.Bell)
 
-		Library:RegisterCommand("Toggle Blur", "Arka plan bulaniklastirmayi ac/kapat", function()
+		Library:RegisterCommand("Toggle Blur", "Turn the background blur on or off", function()
 			Library.BlurEnabled = not Library.BlurEnabled
 			if Library._blur then
 				Tween(Library._blur, 0.3, { Size = Library.BlurEnabled and 14 or 0 })
 			end
 			Library:Notify({
-				Title = "Blur", Content = Library.BlurEnabled and "Acik" or "Kapali",
+				Title = "Blur", Content = Library.BlurEnabled and "Background blur enabled" or "Background blur disabled",
 				Type = "info", Time = 2
 			})
 		end, ICONS.Eye)
 
-		Library:RegisterCommand("Replay Tour", "Tanitim turunu tekrar oynat", function()
+		Library:RegisterCommand("Replay Tour", "Play the walkthrough again", function()
 			Library:ResetTour()
 			if Library._tourSteps then Library:StartTour(Library._tourSteps) end
 		end, ICONS.Info)
 
-		Library:RegisterCommand("Copy Game Link", "Oyun linkini kopyala", function()
+		Library:RegisterCommand("Copy Game Link", "Copy this game's URL to your clipboard", function()
 			if setclipboard then
 				pcall(setclipboard, "https://www.roblox.com/games/" .. game.PlaceId)
-				Library:Notify({ Title = "Kopyalandi", Content = "Oyun linki", Type = "success", Time = 2 })
+				Library:Notify({ Title = "Copied", Content = "Game link copied to clipboard", Type = "success", Time = 2 })
 			end
 		end, ICONS.Copy)
 
-		Library:RegisterCommand("Rejoin Server", "Sunucuya yeniden baglan", function()
+		Library:RegisterCommand("Rejoin Server", "Reconnect to the current server", function()
 			game:GetService("TeleportService"):Teleport(game.PlaceId, Player)
 		end, ICONS.Home)
 
-		Library:RegisterCommand("Unload Interface", "Arayuzu tamamen kapat", function()
+		Library:RegisterCommand("Unload Interface", "Close everything and clean up", function()
 			Library:Unload()
 		end, ICONS.Alert)
 	end
@@ -3853,33 +3860,33 @@ function Library:New(config)
 	-- ============================================
 	Library._tourSteps = {
 		{
-			Title = "2t1 Studio'ya hos geldin",
-			Body  = "Kisa bir tur ile arayuzu tanitalim. Istedigin an Skip ile atlayabilirsin.",
+			Title = "Welcome to 2t1 Studio",
+			Body  = "Here is a quick look around. It takes about twenty seconds, and you can leave any time with Skip.",
 			Target = function() return self.Main end
 		},
 		{
-			Title = "Sekmeler",
-			Body  = "Soldaki kategoriler acilip kapanir. Bir sekmeye tikladiginda yanindaki beyaz cizgi kayarak oraya gelir.",
+			Title = "Navigation",
+			Body  = "Categories on the left collapse and expand. Pick a tab and the white marker slides across to follow you.",
 			Target = function() return self.Sidebar end
 		},
 		{
-			Title = "Hizli filtre",
-			Body  = "Buraya yazdiginda acik sekmedeki ogeler aninda filtrelenir.",
+			Title = "Quick filter",
+			Body  = "Type here and the current tab narrows down instantly. Useful when a page has a lot on it.",
 			Target = function() return searchBox end
 		},
 		{
-			Title = "Command Palette",
-			Body  = "Ctrl+K ile her yerden acilir. Tum menudeki ayarlari arayabilir, komut calistirabilirsin. Ok tuslariyla gez, Enter ile sec.",
+			Title = "Command palette",
+			Body  = "Press Ctrl+K anywhere to open it. Search every setting in the menu, run commands, jump straight to a control. Arrow keys to move, Enter to pick.",
 			Target = function() return quickHolder end
 		},
 		{
-			Title = "Paneller",
-			Body  = "Ustteki ikonlardan oyuncu listesini ve bildirim gecmisini acabilirsin. Panelleri surukleyip istedigin yere koyabilirsin.",
+			Title = "Side panels",
+			Body  = "These icons open the player list and your notification history. Both panels can be dragged anywhere on screen.",
 			Target = function() return quickHolder end
 		},
 		{
-			Title = "Hazirsin",
-			Body  = "Ayarlarini Settings sekmesinden kaydedebilir, arkadaslarinla paylasabilirsin. Iyi eglenceler.",
+			Title = "You are all set",
+			Body  = "Save your setup under Settings, or export it as a code and send it to a friend. Enjoy.",
 			Target = function() return self.Top end
 		}
 	}
