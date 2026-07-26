@@ -1,6 +1,17 @@
 --[[
-	2t1 Studio - ESP Module
+	2t1 Studio - ESP Module  (v2, performance pass)
+
 	Drawing API based, pooled per player, single render loop.
+
+	What changed in v2
+	  - every Drawing write is dirty-checked, so untouched properties
+	    never cross into the executor
+	  - visibility raycasts run on their own throttle instead of per frame
+	  - Highlight properties only get written when they actually change
+	  - hidden pools short-circuit instead of re-hiding 60 objects per frame
+	  - camera and player state is resolved once per frame, not per target
+	  - character part lookups are cached until the model is replaced
+	  - optional cap on how many of the nearest players get drawn
 
 	Usage:
 		local ESP = loadstring(game:HttpGet(".../esp.lua"))()
@@ -29,7 +40,11 @@ ESP.Settings = {
 	TeamCheck        = false,   -- skip players on your team
 	VisibilityCheck  = true,    -- recolour when the target is behind cover
 	MaxDistance      = 2000,
-	RefreshRate      = 0,       -- 0 = every frame, otherwise seconds between updates
+
+	-- performance
+	RefreshRate      = 0,       -- seconds between full updates, 0 = every frame
+	VisRate          = 0.12,    -- seconds between visibility raycasts per target
+	MaxTargets       = 0,       -- 0 = unlimited, otherwise only the N nearest
 
 	Colors = {
 		Enemy    = Color3.fromRGB(255, 70, 80),
@@ -91,7 +106,7 @@ ESP.Settings = {
 		Radius    = 4,
 		Thickness = 1,
 		Filled    = false,
-		Sides     = 14,
+		Sides     = 12,
 	},
 
 	Chams = {
@@ -118,10 +133,12 @@ local S = ESP.Settings
 -- ============================================
 -- INTERNAL
 -- ============================================
-local objects   = {}      -- player -> drawing pool
-local running   = false
-local conn      = nil
-local accum     = 0
+local objects     = {}    -- player -> drawing pool
+local running     = false
+local conn        = nil
+local accum       = 0
+local sortAccum   = 0
+local renderOrder = {}    -- players allowed to draw this cycle when capped
 
 local hasDrawing = (typeof(Drawing) == "table" or typeof(Drawing) == "userdata") and true or false
 
@@ -139,13 +156,11 @@ local function boolProxy(obj)
 			if k == "Remove" or k == "Destroy" then
 				return function() pcall(function() obj:Remove() end) end
 			end
-			local ok, v = pcall(function() return obj[k] end)
-			if ok then return v end
-			return nil
+			return obj[k]
 		end,
 		__newindex = function(_, k, v)
 			if type(v) == "boolean" then v = v and 1 or 0 end
-			pcall(function() obj[k] = v end)
+			obj[k] = v
 		end,
 	})
 end
@@ -287,42 +302,73 @@ local R6_BONES = {
 
 local MAX_BONES = #R15_BONES
 
+-- ---------- cached drawing handle ----------
+-- Every write to a Drawing crosses into the executor. Comparing against the
+-- last written value in Lua first is far cheaper, and in normal play most
+-- properties do not change between frames.
+local Draw = {}
+Draw.__index = Draw
+
+function Draw.new(obj)
+	return setmetatable({ o = obj, c = {} }, Draw)
+end
+
+function Draw:set(k, v)
+	local c = self.c
+	if c[k] ~= v then
+		c[k] = v
+		self.o[k] = v
+	end
+end
+
+function Draw:show(v)
+	local c = self.c
+	if c.Visible ~= v then
+		c.Visible = v
+		self.o.Visible = v
+	end
+end
+
+function Draw:remove()
+	pcall(function() self.o:Remove() end)
+end
+
 -- ---------- drawing helpers ----------
 local function newLine()
-	return build("Line", function(l)
-		l.Visible = false; l.Thickness = 1; l.Transparency = 1
-		l.Color = Color3.new(1, 1, 1)
-	end)
+	return Draw.new(build("Line", function(l)
+		l:show(false); l:set("Thickness", 1; l.Transparency = 1)
+		l:set("Color", Color3.new(1, 1, 1))
+	end))
 end
 
 local function newText()
-	return build("Text", function(t)
+	return Draw.new(build("Text", function(t)
 		t.Visible = false; t.Center = true; t.Outline = true
 		t.Size = 13; t.Font = 2; t.Transparency = 1
 		t.Color = Color3.new(1, 1, 1)
-	end)
+	end))
 end
 
 local function newSquare()
-	return build("Square", function(sq)
+	return Draw.new(build("Square", function(sq)
 		sq.Visible = false; sq.Thickness = 1; sq.Filled = false
 		sq.Transparency = 1; sq.Color = Color3.new(1, 1, 1)
-	end)
+	end))
 end
 
 local function newCircle()
-	return build("Circle", function(c)
+	return Draw.new(build("Circle", function(c)
 		c.Visible = false; c.Thickness = 1; c.Filled = false
-		c.NumSides = 14; c.Radius = 4; c.Transparency = 1
+		c.NumSides = 12; c.Radius = 4; c.Transparency = 1
 		c.Color = Color3.new(1, 1, 1)
-	end)
+	end))
 end
 
 local function newTriangle()
-	return build("Triangle", function(t)
+	return Draw.new(build("Triangle", function(t)
 		t.Visible = false; t.Thickness = 2; t.Filled = true
 		t.Transparency = 1; t.Color = Color3.new(1, 1, 1)
-	end)
+	end))
 end
 
 -- ---------- pool ----------
@@ -342,10 +388,17 @@ local function createPool()
 		headDot    = newCircle(),
 		bones      = {},
 		arrow      = newTriangle(),
+
 		highlight  = nil,
+		hlState    = {},     -- last written Highlight values
+		hidden     = false,
+		vis        = true,   -- cached line-of-sight result
+		visT       = 0,      -- when it was last refreshed
+		charCache  = nil,
+		partCache  = nil,
 	}
 
-	p.boxFill.Filled = true
+	p.boxFill:set("Filled", true)
 
 	for i = 1, 8 do
 		p.corners[i]   = newLine()
@@ -359,67 +412,46 @@ end
 
 local function hidePool(p)
 	if not p then return end
-	p.boxOutline.Visible = false
-	p.box.Visible        = false
-	p.boxFill.Visible    = false
-	p.name.Visible       = false
-	p.distance.Visible   = false
-	p.healthBg.Visible   = false
-	p.healthBar.Visible  = false
-	p.tracer.Visible     = false
-	p.tracerOut.Visible  = false
-	p.headDot.Visible    = false
-	p.arrow.Visible      = false
+	if p.hidden then return end      -- already down, skip ~60 property writes
+	p.hidden = true
+	p.boxOutline:show(false)
+	p.box:show(false)
+	p.boxFill:show(false)
+	p.name:show(false)
+	p.distance:show(false)
+	p.healthBg:show(false)
+	p.healthBar:show(false)
+	p.tracer:show(false)
+	p.tracerOut:show(false)
+	p.headDot:show(false)
+	p.arrow:show(false)
 	for i = 1, 8 do
-		p.corners[i].Visible   = false
-		p.cornerOut[i].Visible = false
+		p.corners[i]:show(false)
+		p.cornerOut[i]:show(false)
 	end
 	for i = 1, MAX_BONES do
-		p.bones[i].Visible = false
+		p.bones[i]:show(false)
 	end
-	if p.highlight then p.highlight.Enabled = false end
+	if p.highlight and p.hlState.Enabled ~= false then
+		p.hlState.Enabled = false
+		p.highlight.Enabled = false
+	end
 end
 
 local function destroyPool(p)
 	if not p then return end
-	local function kill(o) if o and o.Remove then pcall(function() o:Remove() end) end end
-	kill(p.boxOutline); kill(p.box); kill(p.boxFill)
-	kill(p.name); kill(p.distance)
-	kill(p.healthBg); kill(p.healthBar)
-	kill(p.tracer); kill(p.tracerOut)
-	kill(p.headDot); kill(p.arrow)
-	for i = 1, 8 do kill(p.corners[i]); kill(p.cornerOut[i]) end
-	for i = 1, MAX_BONES do kill(p.bones[i]) end
+	p.boxOutline:remove(); p.box:remove(); p.boxFill:remove()
+	p.name:remove(); p.distance:remove()
+	p.healthBg:remove(); p.healthBar:remove()
+	p.tracer:remove(); p.tracerOut:remove()
+	p.headDot:remove(); p.arrow:remove()
+	for i = 1, 8 do p.corners[i]:remove(); p.cornerOut[i]:remove() end
+	for i = 1, MAX_BONES do p.bones[i]:remove() end
 	if p.highlight then p.highlight:Destroy() end
 end
 
 -- ---------- geometry ----------
-local function getCharacterParts(char)
-	local hrp  = char:FindFirstChild("HumanoidRootPart")
-	local head = char:FindFirstChild("Head")
-	local hum  = char:FindFirstChildOfClass("Humanoid")
-	return hrp, head, hum
-end
 
--- screen-space box from head top to foot bottom
-local function computeBox(hrp, head)
-	local topWorld = (head.CFrame * CFrame.new(0, head.Size.Y * 0.9, 0)).Position
-	local botWorld = (hrp.CFrame * CFrame.new(0, -3.3, 0)).Position
-
-	local topPos, topVis = Camera:WorldToViewportPoint(topWorld)
-	local botPos, botVis = Camera:WorldToViewportPoint(botWorld)
-	if not (topVis or botVis) then return nil end
-	if topPos.Z <= 0 and botPos.Z <= 0 then return nil end
-
-	local height = math.abs(topPos.Y - botPos.Y)
-	if height < 4 then return nil end
-	local width  = height * 0.52
-
-	local x = math.min(topPos.X, botPos.X) - width / 2
-	local y = math.min(topPos.Y, botPos.Y)
-
-	return Vector2.new(x, y), Vector2.new(width, height)
-end
 
 local raycastParams = RaycastParams.new()
 do
@@ -434,65 +466,57 @@ do
 	end
 end
 
-local function isVisible(char, targetPos)
-	local myChar = LocalPlayer.Character
-	if not myChar then return true end
-	raycastParams.FilterDescendantsInstances = { myChar, char, Camera }
-	local origin = Camera.CFrame.Position
-	local dir = targetPos - origin
-	local result = Workspace:Raycast(origin, dir, raycastParams)
-	return result == nil
+local rayFilter = { nil, nil }
+
+local function checkVisible(camPos, myChar, char, targetPos)
+	rayFilter[1] = myChar
+	rayFilter[2] = char
+	raycastParams.FilterDescendantsInstances = rayFilter
+	return Workspace:Raycast(camPos, targetPos - camPos, raycastParams) == nil
 end
 
-local function tracerOrigin()
-	local vp = Camera.ViewportSize
-	local o = S.Tracer.Origin
-	if o == "center" then return Vector2.new(vp.X / 2, vp.Y / 2)
-	elseif o == "top" then return Vector2.new(vp.X / 2, 0)
-	elseif o == "mouse" then
-		local m = UIS:GetMouseLocation()
-		return Vector2.new(m.X, m.Y)
-	end
-	return Vector2.new(vp.X / 2, vp.Y)
-end
+
 
 -- ---------- chams ----------
 local function ensureHighlight(p, char)
 	if not S.Chams.Enabled then
-		if p.highlight then p.highlight.Enabled = false end
+		if p.highlight and p.hlState.Enabled ~= false then
+			p.hlState.Enabled = false
+			p.highlight.Enabled = false
+		end
 		return
 	end
+
 	if not p.highlight or p.highlight.Parent ~= char then
 		if p.highlight then p.highlight:Destroy() end
 		local okHl, hl = pcall(function() return Instance.new("Highlight") end)
 		if not okHl or not hl then return end
 		hl.Name = "2t1_Chams"
 		hl.Adornee = char
-		hl.FillColor = S.Chams.FillColor
-		hl.FillTransparency = S.Chams.FillTransparency
-		hl.OutlineColor = S.Chams.OutlineColor
-		hl.OutlineTransparency = S.Chams.OutlineAlpha
-		hl.DepthMode = S.Chams.AlwaysOnTop
-			and Enum.HighlightDepthMode.AlwaysOnTop
-			or Enum.HighlightDepthMode.Occluded
-		local ok = pcall(function() hl.Parent = char end)
-		if not ok then hl.Parent = Workspace end
+		local okP = pcall(function() hl.Parent = char end)
+		if not okP then hl.Parent = Workspace end
 		p.highlight = hl
+		p.hlState = {}
 	end
-	p.highlight.Enabled = true
-	p.highlight.FillColor = S.Chams.FillColor
-	p.highlight.FillTransparency = S.Chams.FillTransparency
-	p.highlight.OutlineColor = S.Chams.OutlineColor
-	p.highlight.OutlineTransparency = S.Chams.OutlineAlpha
-	p.highlight.DepthMode = S.Chams.AlwaysOnTop
-		and Enum.HighlightDepthMode.AlwaysOnTop
-		or Enum.HighlightDepthMode.Occluded
+
+	-- only write what actually changed; Instance writes fire change signals
+	local hl, st, c = p.highlight, p.hlState, S.Chams
+	if st.Enabled ~= true then st.Enabled = true; hl.Enabled = true end
+	if st.FillColor ~= c.FillColor then st.FillColor = c.FillColor; hl.FillColor = c.FillColor end
+	if st.FillTransparency ~= c.FillTransparency then
+		st.FillTransparency = c.FillTransparency; hl.FillTransparency = c.FillTransparency
+	end
+	if st.OutlineColor ~= c.OutlineColor then st.OutlineColor = c.OutlineColor; hl.OutlineColor = c.OutlineColor end
+	if st.OutlineAlpha ~= c.OutlineAlpha then
+		st.OutlineAlpha = c.OutlineAlpha; hl.OutlineTransparency = c.OutlineAlpha
+	end
+	local depth = c.AlwaysOnTop and Enum.HighlightDepthMode.AlwaysOnTop or Enum.HighlightDepthMode.Occluded
+	if st.Depth ~= depth then st.Depth = depth; hl.DepthMode = depth end
 end
 
 -- ---------- corner box ----------
-local function drawCornerBox(p, pos, size, color, thickness)
-	local cut = math.min(size.X, size.Y) * 0.28
-	local x, y, w, hgt = pos.X, pos.Y, size.X, size.Y
+local function drawCornerBox(p, x, y, w, hgt, color, thickness)
+	local cut = (w < hgt and w or hgt) * 0.28
 
 	local segs = {
 		{ Vector2.new(x, y),               Vector2.new(x + cut, y) },
@@ -509,135 +533,174 @@ local function drawCornerBox(p, pos, size, color, thickness)
 		local seg = segs[i]
 		if S.Box.Outline then
 			local o = p.cornerOut[i]
-			o.From = seg[1]; o.To = seg[2]
-			o.Thickness = thickness + 2
-			o.Color = Color3.new(0, 0, 0)
-			o.Transparency = 0.55
-			o.Visible = true
+			o:set("From", seg[1]; o.To = seg[2])
+			o:set("Thickness", thickness + 2)
+			o:set("Color", Color3.new(0, 0, 0))
+			o:set("Transparency", 0.55)
+			o:show(true)
 		else
-			p.cornerOut[i].Visible = false
+			p.cornerOut[i]:show(false)
 		end
 
 		local l = p.corners[i]
-		l.From = seg[1]; l.To = seg[2]
-		l.Thickness = thickness
-		l.Color = color
-		l.Visible = true
+		l:set("From", seg[1]; l.To = seg[2])
+		l:set("Thickness", thickness)
+		l:set("Color", color)
+		l:show(true)
 	end
 end
 
 -- ---------- off screen arrow ----------
-local function drawArrow(p, worldPos, color)
-	local vp = Camera.ViewportSize
-	local center = Vector2.new(vp.X / 2, vp.Y / 2)
-
-	local screenPos, onScreen = Camera:WorldToViewportPoint(worldPos)
-	if onScreen and screenPos.Z > 0 then
-		p.arrow.Visible = false
+local function drawArrow(p, worldPos, color, viewW, viewH)
+	local sp, onScreen = Camera:WorldToViewportPoint(worldPos)
+	if onScreen and sp.Z > 0 then
+		p.arrow:show(false)
 		return
 	end
 
-	local dir = Vector2.new(screenPos.X, screenPos.Y) - center
-	if screenPos.Z <= 0 then dir = -dir end
-	if dir.Magnitude < 0.001 then p.arrow.Visible = false; return end
-	dir = dir.Unit
+	local cx, cy = viewW * 0.5, viewH * 0.5
+	local dx, dy = sp.X - cx, sp.Y - cy
+	if sp.Z <= 0 then dx, dy = -dx, -dy end
 
-	local tip  = center + dir * S.OffScreen.Radius
-	local perp = Vector2.new(-dir.Y, dir.X)
-	local sz   = S.OffScreen.Size
+	local mag = math.sqrt(dx * dx + dy * dy)
+	if mag < 0.001 then p.arrow:show(false); return end
+	dx, dy = dx / mag, dy / mag
 
-	p.arrow.PointA = tip + dir * sz
-	p.arrow.PointB = tip - dir * (sz * 0.4) + perp * (sz * 0.62)
-	p.arrow.PointC = tip - dir * (sz * 0.4) - perp * (sz * 0.62)
-	p.arrow.Color = color
-	p.arrow.Thickness = S.OffScreen.Thickness
-	p.arrow.Filled = true
-	p.arrow.Visible = true
+	local r  = S.OffScreen.Radius
+	local sz = S.OffScreen.Size
+	local tipX, tipY = cx + dx * r, cy + dy * r
+	local px, py = -dy, dx
+
+	p.arrow:set("PointA", Vector2.new(tipX + dx * sz, tipY + dy * sz))
+	p.arrow:set("PointB", Vector2.new(tipX - dx * sz * 0.4 + px * sz * 0.62,
+	                                  tipY - dy * sz * 0.4 + py * sz * 0.62))
+	p.arrow:set("PointC", Vector2.new(tipX - dx * sz * 0.4 - px * sz * 0.62,
+	                                  tipY - dy * sz * 0.4 - py * sz * 0.62))
+	p.arrow:set("Color", color)
+	p.arrow:set("Thickness", S.OffScreen.Thickness)
+	p.arrow:show(true)
 end
 
 -- ============================================
 -- MAIN RENDER
 -- ============================================
-local function renderPlayer(plr, p)
+local function renderPlayer(plr, p, ctx)
 	local char = plr.Character
 	if not char then hidePool(p); return end
 
-	local hrp, head, hum = getCharacterParts(char)
-	if not (hrp and head and hum) or hum.Health <= 0 then hidePool(p); return end
+	-- part lookups are cached until the character model is replaced
+	if p.charCache ~= char then
+		p.charCache = char
+		p.partCache = {
+			hrp  = char:FindFirstChild("HumanoidRootPart"),
+			head = char:FindFirstChild("Head"),
+			hum  = char:FindFirstChildOfClass("Humanoid"),
+			r15  = char:FindFirstChild("UpperTorso") ~= nil,
+		}
+	end
 
-	-- team filter
+	local parts = p.partCache
+	local hrp, head, hum = parts.hrp, parts.head, parts.hum
+	if not hrp or not hrp.Parent then p.charCache = nil; hidePool(p); return end
+	if not head or not hum or hum.Health <= 0 then hidePool(p); return end
+
 	if S.TeamCheck and plr.Team and plr.Team == LocalPlayer.Team then
 		hidePool(p); return
 	end
 
-	-- distance
-	local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-	local dist = myRoot and (hrp.Position - myRoot.Position).Magnitude or 0
+	local hrpPos = hrp.Position
+	local dist = ctx.myPos and (hrpPos - ctx.myPos).Magnitude or 0
 	if dist > S.MaxDistance then hidePool(p); return end
 
-	-- colour
-	local isTeam = plr.Team and LocalPlayer.Team and plr.Team == LocalPlayer.Team
-	local color = isTeam and S.Colors.Team or S.Colors.Enemy
+	-- colour, with the raycast on its own throttle
+	local color
 	if S.VisibilityCheck then
-		color = isVisible(char, head.Position) and S.Colors.Visible or S.Colors.Occluded
+		if ctx.now - p.visT >= S.VisRate then
+			p.visT = ctx.now
+			p.vis = checkVisible(ctx.camPos, ctx.myChar, char, head.Position)
+		end
+		color = p.vis and S.Colors.Visible or S.Colors.Occluded
+	else
+		color = (plr.Team and LocalPlayer.Team and plr.Team == LocalPlayer.Team)
+			and S.Colors.Team or S.Colors.Enemy
 	end
 
 	ensureHighlight(p, char)
 
-	-- off-screen arrow
-	if S.OffScreen.Enabled then
-		drawArrow(p, hrp.Position, color)
-	else
-		p.arrow.Visible = false
+	-- project the body once
+	local headCF = head.CFrame
+	local topPos = Camera:WorldToViewportPoint((headCF + headCF.UpVector * (head.Size.Y * 0.9)).Position)
+	local botPos = Camera:WorldToViewportPoint(hrpPos - Vector3.new(0, 3.3, 0))
+
+	if topPos.Z <= 0 and botPos.Z <= 0 then
+		hidePool(p)
+		if S.OffScreen.Enabled then
+			p.hidden = false
+			drawArrow(p, hrpPos, color, ctx.viewW, ctx.viewH)
+		end
+		return
 	end
 
-	local pos, size = computeBox(hrp, head)
-	if not pos then hidePool(p); if S.OffScreen.Enabled then drawArrow(p, hrp.Position, color) end return end
+	local height = topPos.Y - botPos.Y
+	if height < 0 then height = -height end
+	if height < 4 then hidePool(p); return end
+	local width = height * 0.52
+
+	local bx = (topPos.X < botPos.X and topPos.X or botPos.X) - width * 0.5
+	local by = (topPos.Y < botPos.Y and topPos.Y or botPos.Y)
+
+	p.hidden = false
+
+	if S.OffScreen.Enabled then
+		drawArrow(p, hrpPos, color, ctx.viewW, ctx.viewH)
+	else
+		p.arrow:show(false)
+	end
 
 	-- ----- box -----
 	if S.Box.Enabled then
 		if S.Box.Style == "corner" then
-			p.box.Visible = false
-			p.boxOutline.Visible = false
-			drawCornerBox(p, pos, size, color, S.Box.Thickness)
+			p.box:show(false)
+			p.boxOutline:show(false)
+			drawCornerBox(p, bx, by, width, height, color, S.Box.Thickness)
 		else
 			for i = 1, 8 do
-				p.corners[i].Visible = false
-				p.cornerOut[i].Visible = false
+				p.corners[i]:show(false)
+				p.cornerOut[i]:show(false)
 			end
 			if S.Box.Outline then
-				p.boxOutline.Position = pos - Vector2.new(1, 1)
-				p.boxOutline.Size = size + Vector2.new(2, 2)
-				p.boxOutline.Color = Color3.new(0, 0, 0)
-				p.boxOutline.Thickness = S.Box.Thickness + 2
-				p.boxOutline.Transparency = 0.55
-				p.boxOutline.Visible = true
+				p.boxOutline:set("Position", Vector2.new(bx - 1, by - 1))
+				p.boxOutline:set("Size", Vector2.new(width + 2, height + 2))
+				p.boxOutline:set("Color", Color3.new(0, 0, 0))
+				p.boxOutline:set("Thickness", S.Box.Thickness + 2)
+				p.boxOutline:set("Transparency", 0.55)
+				p.boxOutline:show(true)
 			else
-				p.boxOutline.Visible = false
+				p.boxOutline:show(false)
 			end
-			p.box.Position = pos
-			p.box.Size = size
-			p.box.Color = color
-			p.box.Thickness = S.Box.Thickness
-			p.box.Visible = true
+			p.box:set("Position", Vector2.new(bx, by))
+			p.box:set("Size", Vector2.new(width, height))
+			p.box:set("Color", color)
+			p.box:set("Thickness", S.Box.Thickness)
+			p.box:show(true)
 		end
 
 		if S.Box.Filled then
-			p.boxFill.Position = pos
-			p.boxFill.Size = size
-			p.boxFill.Color = color
-			p.boxFill.Transparency = 1 - S.Box.FillAlpha
-			p.boxFill.Visible = true
+			p.boxFill:set("Position", Vector2.new(bx, by))
+			p.boxFill:set("Size", Vector2.new(width, height))
+			p.boxFill:set("Color", color)
+			p.boxFill:set("Transparency", 1 - S.Box.FillAlpha)
+			p.boxFill:show(true)
 		else
-			p.boxFill.Visible = false
+			p.boxFill:show(false)
 		end
 	else
-		p.box.Visible = false
-		p.boxOutline.Visible = false
-		p.boxFill.Visible = false
+		p.box:show(false)
+		p.boxOutline:show(false)
+		p.boxFill:show(false)
 		for i = 1, 8 do
-			p.corners[i].Visible = false
-			p.cornerOut[i].Visible = false
+			p.corners[i]:show(false)
+			p.cornerOut[i]:show(false)
 		end
 	end
 
@@ -647,106 +710,104 @@ local function renderPlayer(plr, p)
 		if S.Name.ShowHealth then
 			label = label .. "   " .. math.floor(hum.Health) .. "hp"
 		end
-		p.name.Text = label
-		p.name.Size = S.Name.Size
-		p.name.Font = S.Name.Font
-		p.name.Outline = S.Name.Outline
-		p.name.Color = color
-		p.name.Position = Vector2.new(pos.X + size.X / 2, pos.Y - S.Name.Size - 3)
-		p.name.Visible = true
+		p.name:set("Text", label)
+		p.name:set("Size", S.Name.Size)
+		p.name:set("Font", S.Name.Font)
+		p.name:set("Outline", S.Name.Outline)
+		p.name:set("Color", color)
+		p.name:set("Position", Vector2.new(bx + width * 0.5, by - S.Name.Size - 3))
+		p.name:show(true)
 	else
-		p.name.Visible = false
+		p.name:show(false)
 	end
 
 	-- ----- distance -----
 	if S.Distance.Enabled then
-		p.distance.Text = math.floor(dist) .. "m"
-		p.distance.Size = S.Distance.Size
-		p.distance.Font = S.Distance.Font
-		p.distance.Outline = S.Distance.Outline
-		p.distance.Color = color
-		p.distance.Position = Vector2.new(pos.X + size.X / 2, pos.Y + size.Y + 2)
-		p.distance.Visible = true
+		p.distance:set("Text", math.floor(dist) .. "m")
+		p.distance:set("Size", S.Distance.Size)
+		p.distance:set("Font", S.Distance.Font)
+		p.distance:set("Outline", S.Distance.Outline)
+		p.distance:set("Color", color)
+		p.distance:set("Position", Vector2.new(bx + width * 0.5, by + height + 2))
+		p.distance:show(true)
 	else
-		p.distance.Visible = false
+		p.distance:show(false)
 	end
 
 	-- ----- health bar -----
 	if S.Health.Enabled and hum.MaxHealth > 0 then
-		local pct = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+		local pct = hum.Health / hum.MaxHealth
+		if pct < 0 then pct = 0 elseif pct > 1 then pct = 1 end
 		local barX = (S.Health.Side == "right")
-			and (pos.X + size.X + S.Health.Offset)
-			or  (pos.X - S.Health.Offset)
-
-		local top = Vector2.new(barX, pos.Y)
-		local bot = Vector2.new(barX, pos.Y + size.Y)
+			and (bx + width + S.Health.Offset)
+			or  (bx - S.Health.Offset)
 
 		if S.Health.Outline then
-			p.healthBg.From = top - Vector2.new(0, 1)
-			p.healthBg.To   = bot + Vector2.new(0, 1)
-			p.healthBg.Thickness = S.Health.Width + 2
-			p.healthBg.Color = Color3.new(0, 0, 0)
-			p.healthBg.Transparency = 0.6
-			p.healthBg.Visible = true
+			p.healthBg:set("From", Vector2.new(barX, by - 1))
+			p.healthBg:set("To", Vector2.new(barX, by + height + 1))
+			p.healthBg:set("Thickness", S.Health.Width + 2)
+			p.healthBg:set("Color", Color3.new(0, 0, 0))
+			p.healthBg:set("Transparency", 0.6)
+			p.healthBg:show(true)
 		else
-			p.healthBg.Visible = false
+			p.healthBg:show(false)
 		end
 
-		p.healthBar.From = Vector2.new(barX, pos.Y + size.Y * (1 - pct))
-		p.healthBar.To   = bot
-		p.healthBar.Thickness = S.Health.Width
-		p.healthBar.Color = S.Health.LowColor:Lerp(S.Health.HighColor, pct)
-		p.healthBar.Visible = true
+		p.healthBar:set("From", Vector2.new(barX, by + height * (1 - pct)))
+		p.healthBar:set("To", Vector2.new(barX, by + height))
+		p.healthBar:set("Thickness", S.Health.Width)
+		p.healthBar:set("Color", S.Health.LowColor:Lerp(S.Health.HighColor, pct))
+		p.healthBar:show(true)
 	else
-		p.healthBg.Visible = false
-		p.healthBar.Visible = false
+		p.healthBg:show(false)
+		p.healthBar:show(false)
 	end
 
 	-- ----- tracer -----
 	if S.Tracer.Enabled then
-		local from = tracerOrigin()
-		local to = Vector2.new(pos.X + size.X / 2, pos.Y + size.Y)
+		local to = Vector2.new(bx + width * 0.5, by + height)
 		if S.Tracer.Outline then
-			p.tracerOut.From = from; p.tracerOut.To = to
-			p.tracerOut.Thickness = S.Tracer.Thickness + 2
-			p.tracerOut.Color = Color3.new(0, 0, 0)
-			p.tracerOut.Transparency = 0.55
-			p.tracerOut.Visible = true
+			p.tracerOut:set("From", from; p.tracerOut.To = to)
+			p.tracerOut:set("Thickness", S.Tracer.Thickness + 2)
+			p.tracerOut:set("Color", Color3.new(0, 0, 0))
+			p.tracerOut:set("Transparency", 0.55)
+			p.tracerOut:show(true)
 		else
-			p.tracerOut.Visible = false
+			p.tracerOut:show(false)
 		end
-		p.tracer.From = from
-		p.tracer.To = to
-		p.tracer.Thickness = S.Tracer.Thickness
-		p.tracer.Color = color
-		p.tracer.Visible = true
+		p.tracer:set("From", ctx.tracerFrom)
+		p.tracer:set("To", to)
+		p.tracer:set("Thickness", S.Tracer.Thickness)
+		p.tracer:set("Color", color)
+		p.tracer:show(true)
 	else
-		p.tracer.Visible = false
-		p.tracerOut.Visible = false
+		p.tracer:show(false)
+		p.tracerOut:show(false)
 	end
 
 	-- ----- head dot -----
 	if S.HeadDot.Enabled then
-		local hp, vis = Camera:WorldToViewportPoint(head.Position)
-		if vis and hp.Z > 0 then
-			local scale = math.clamp(1000 / (dist + 1), 0.35, 2.2)
-			p.headDot.Position = Vector2.new(hp.X, hp.Y)
-			p.headDot.Radius = S.HeadDot.Radius * scale
-			p.headDot.NumSides = S.HeadDot.Sides
-			p.headDot.Thickness = S.HeadDot.Thickness
-			p.headDot.Filled = S.HeadDot.Filled
-			p.headDot.Color = color
-			p.headDot.Visible = true
+		local hp = Camera:WorldToViewportPoint(head.Position)
+		if hp.Z > 0 then
+			local scale = 1000 / (dist + 1)
+			if scale < 0.35 then scale = 0.35 elseif scale > 2.2 then scale = 2.2 end
+			p.headDot:set("Position", Vector2.new(hp.X, hp.Y))
+			p.headDot:set("Radius", S.HeadDot.Radius * scale)
+			p.headDot:set("NumSides", S.HeadDot.Sides)
+			p.headDot:set("Thickness", S.HeadDot.Thickness)
+			p.headDot:set("Filled", S.HeadDot.Filled)
+			p.headDot:set("Color", color)
+			p.headDot:show(true)
 		else
-			p.headDot.Visible = false
+			p.headDot:show(false)
 		end
 	else
-		p.headDot.Visible = false
+		p.headDot:show(false)
 	end
 
 	-- ----- skeleton -----
 	if S.Skeleton.Enabled then
-		local bones = char:FindFirstChild("UpperTorso") and R15_BONES or R6_BONES
+		local bones = parts.r15 and R15_BONES or R6_BONES
 		local idx = 0
 		for _, pair in ipairs(bones) do
 			local a = char:FindFirstChild(pair[1])
@@ -757,23 +818,23 @@ local function renderPlayer(plr, p)
 				local pa, va = Camera:WorldToViewportPoint(a.Position)
 				local pb, vb = Camera:WorldToViewportPoint(b.Position)
 				if pa.Z > 0 and pb.Z > 0 then
-					line.From = Vector2.new(pa.X, pa.Y)
-					line.To   = Vector2.new(pb.X, pb.Y)
-					line.Thickness = S.Skeleton.Thickness
-					line.Color = S.Skeleton.Color
-					line.Visible = true
+					line:set("From", Vector2.new(pa.X, pa.Y))
+					line:set("To", Vector2.new(pb.X, pb.Y))
+					line:set("Thickness", S.Skeleton.Thickness)
+					line:set("Color", S.Skeleton.Color)
+					line:show(true)
 				else
-					line.Visible = false
+					line:show(false)
 				end
 			elseif line then
-				line.Visible = false
+				line:show(false)
 			end
 		end
 		for i = idx + 1, MAX_BONES do
-			p.bones[i].Visible = false
+			p.bones[i]:show(false)
 		end
 	else
-		for i = 1, MAX_BONES do p.bones[i].Visible = false end
+		for i = 1, MAX_BONES do p.bones[i]:show(false) end
 	end
 end
 
@@ -822,6 +883,8 @@ function ESP:Init()
 	Players.PlayerAdded:Connect(function(plr) pcall(addPlayer, plr) end)
 	Players.PlayerRemoving:Connect(function(plr) pcall(removePlayer, plr) end)
 
+	local ctx = {}
+
 	conn = RunService.RenderStepped:Connect(function(dt)
 		if not S.Enabled then
 			for _, p in pairs(objects) do hidePool(p) end
@@ -834,9 +897,65 @@ function ESP:Init()
 			accum = 0
 		end
 
-		for plr, p in pairs(objects) do
-			local ok, err = pcall(renderPlayer, plr, p)
-			if not ok then hidePool(p) end
+		-- resolve camera and player state once, not once per target
+		local camCF = Camera.CFrame
+		local vp = Camera.ViewportSize
+		ctx.camPos = camCF.Position
+		ctx.viewW  = vp.X
+		ctx.viewH  = vp.Y
+		ctx.now    = os.clock()
+
+		local myChar = LocalPlayer.Character
+		ctx.myChar = myChar
+		local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+		ctx.myPos = myRoot and myRoot.Position or nil
+
+		if S.Tracer.Enabled then
+			local o = S.Tracer.Origin
+			if o == "center" then
+				ctx.tracerFrom = Vector2.new(vp.X * 0.5, vp.Y * 0.5)
+			elseif o == "top" then
+				ctx.tracerFrom = Vector2.new(vp.X * 0.5, 0)
+			elseif o == "mouse" then
+				local m = UIS:GetMouseLocation()
+				ctx.tracerFrom = Vector2.new(m.X, m.Y)
+			else
+				ctx.tracerFrom = Vector2.new(vp.X * 0.5, vp.Y)
+			end
+		end
+
+		local limit = S.MaxTargets
+		if limit and limit > 0 and ctx.myPos then
+			-- recompute the nearest-N set a few times a second, not every frame
+			sortAccum = sortAccum + dt
+			if sortAccum >= 0.2 then
+				sortAccum = 0
+				local list = {}
+				for plr in pairs(objects) do
+					local c = plr.Character
+					local r = c and c:FindFirstChild("HumanoidRootPart")
+					if r then
+						list[#list + 1] = { plr = plr, d = (r.Position - ctx.myPos).Magnitude }
+					end
+				end
+				table.sort(list, function(a, b) return a.d < b.d end)
+				renderOrder = {}
+				for i = 1, math.min(limit, #list) do
+					renderOrder[list[i].plr] = true
+				end
+			end
+
+			for plr, p in pairs(objects) do
+				if renderOrder[plr] then
+					if not pcall(renderPlayer, plr, p, ctx) then hidePool(p) end
+				else
+					hidePool(p)
+				end
+			end
+		else
+			for plr, p in pairs(objects) do
+				if not pcall(renderPlayer, plr, p, ctx) then hidePool(p) end
+			end
 		end
 	end)
 
@@ -905,7 +1024,7 @@ function ESP:BuildUI(tab)
 	})
 	main:Toggle({
 		Name = "Visibility Colours", Icon = "scan", Flag = "esp_vischeck", Default = true,
-		Tooltip = "Recolour targets depending on whether you have line of sight.",
+		Tooltip = "Recolour targets based on line of sight. Costs one raycast per target per interval.",
 		Callback = function(v) S.VisibilityCheck = v end
 	})
 	main:Slider({
@@ -914,14 +1033,37 @@ function ESP:BuildUI(tab)
 		Tooltip = "Anything past this range is not drawn.",
 		Callback = function(v) S.MaxDistance = v end
 	})
-	main:Dropdown({
+
+	-- ---------- performance ----------
+	local perf = tab:Section({ Name = "Performance", Icon = "activity", Default = false })
+
+	perf:Paragraph({
+		Title = "If your frame rate drops",
+		Content = "Work through these in order: lower the Update Rate, raise the Visibility Interval, cap Max Targets, then turn off Skeleton and Chams. Those five account for nearly all of the cost."
+	})
+
+	perf:Dropdown({
 		Name = "Update Rate", Icon = "activity", Flag = "esp_rate",
-		List = { "Every frame", "60 Hz", "30 Hz", "15 Hz" }, Default = "Every frame",
-		Tooltip = "Lower rates cost less performance at the price of slight lag on the overlay.",
+		List = { "Every frame", "60 Hz", "30 Hz", "20 Hz", "15 Hz", "10 Hz" },
+		Default = "Every frame",
+		Tooltip = "How often the whole overlay is recalculated. 30 Hz is hard to tell apart and roughly halves the cost.",
 		Callback = function(v)
 			S.RefreshRate = (v == "60 Hz" and 1/60) or (v == "30 Hz" and 1/30)
-				or (v == "15 Hz" and 1/15) or 0
+				or (v == "20 Hz" and 1/20) or (v == "15 Hz" and 1/15)
+				or (v == "10 Hz" and 1/10) or 0
 		end
+	})
+	perf:Slider({
+		Name = "Visibility Interval", Icon = "scan", Flag = "esp_visrate",
+		Min = 0, Max = 1, Default = 0.12, Rounding = 2, Suffix = "s",
+		Tooltip = "Seconds between line-of-sight raycasts per target. Raycasting is the single most expensive part of ESP.",
+		Callback = function(v) S.VisRate = v end
+	})
+	perf:Slider({
+		Name = "Max Targets", Icon = "users", Flag = "esp_maxtargets",
+		Min = 0, Max = 40, Default = 0,
+		Tooltip = "0 draws everyone. Any other value draws only that many of the nearest players.",
+		Callback = function(v) S.MaxTargets = v end
 	})
 
 	-- ---------- colours ----------
@@ -1036,7 +1178,7 @@ function ESP:BuildUI(tab)
 	local ex = tab:Section({ Name = "Extras", Icon = "sparkles", Default = false })
 
 	ex:Toggle({ Name = "Skeleton", Icon = "activity", Flag = "esp_skeleton", Default = false,
-		Tooltip = "Draws limb lines. Works with both R6 and R15 rigs.",
+		Tooltip = "Draws limb lines for R6 and R15. Fourteen extra projections per target, the heaviest visual here.",
 		Callback = function(v) S.Skeleton.Enabled = v end })
 	ex:ColorPicker({ Name = "Skeleton Colour", Icon = "palette", Flag = "esp_skel_col",
 		Default = S.Skeleton.Color,
@@ -1051,6 +1193,10 @@ function ESP:BuildUI(tab)
 		ex:Slider({ Name = "Dot Radius", Icon = "sliders", Flag = "esp_headdot_r",
 			Min = 1, Max = 12, Default = 4,
 			Callback = function(v) S.HeadDot.Radius = v end })
+		ex:Slider({ Name = "Dot Sides", Icon = "sliders", Flag = "esp_headdot_sides",
+			Min = 6, Max = 24, Default = 12,
+			Tooltip = "Fewer sides render faster and look almost identical at small sizes.",
+			Callback = function(v) S.HeadDot.Sides = v end })
 		ex:Toggle({ Name = "Dot Filled", Icon = "palette", Flag = "esp_headdot_fill", Default = false,
 			Callback = function(v) S.HeadDot.Filled = v end })
 		ex:Divider()
@@ -1104,8 +1250,8 @@ function ESP:BuildUI(tab)
 		Callback = function() ESP:Destroy() end })
 
 	return {
-		Main = main, Colours = col, Box = box, Text = txt,
-		Health = hp, Tracers = tr, Extras = ex, Chams = ch
+		Main = main, Performance = perf, Colours = col, Box = box,
+		Text = txt, Health = hp, Tracers = tr, Extras = ex, Chams = ch
 	}
 end
 
