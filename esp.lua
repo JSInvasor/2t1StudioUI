@@ -113,6 +113,8 @@ ESP.Settings = {
 
 local S = ESP.Settings
 
+-- capability corrections are applied after the probe below
+
 -- ============================================
 -- INTERNAL
 -- ============================================
@@ -122,6 +124,151 @@ local conn      = nil
 local accum     = 0
 
 local hasDrawing = (typeof(Drawing) == "table" or typeof(Drawing) == "userdata") and true or false
+
+-- ---------- executor capability probe ----------
+-- Some executors ship a partial Drawing API. Anything missing degrades
+-- silently instead of throwing and killing the calling script.
+ESP.Supported = { Line = false, Text = false, Square = false, Circle = false, Triangle = false }
+ESP.Missing   = {}
+
+-- Some executors only accept numbers where the spec says boolean.
+-- This proxy converts on the way in so the rest of the module stays clean.
+local function boolProxy(obj)
+	return setmetatable({}, {
+		__index = function(_, k)
+			if k == "Remove" or k == "Destroy" then
+				return function() pcall(function() obj:Remove() end) end
+			end
+			local ok, v = pcall(function() return obj[k] end)
+			if ok then return v end
+			return nil
+		end,
+		__newindex = function(_, k, v)
+			if type(v) == "boolean" then v = v and 1 or 0 end
+			pcall(function() obj[k] = v end)
+		end,
+	})
+end
+
+-- true  = works with plain booleans
+-- "num" = works, but booleans must be sent as 0/1
+-- false = unusable
+local function probe(kind)
+	if not hasDrawing then return false end
+
+	local ok, obj = pcall(function() return Drawing.new(kind) end)
+	if not ok or not obj then return false end
+
+	local plain = pcall(function()
+		obj.Visible = false
+		obj.Transparency = 1
+		obj.Color = Color3.new(1, 1, 1)
+	end)
+	if plain then
+		pcall(function() obj:Remove() end)
+		return true
+	end
+
+	-- retry with numeric booleans
+	local numeric = pcall(function()
+		obj.Visible = 0
+		obj.Transparency = 1
+		obj.Color = Color3.new(1, 1, 1)
+	end)
+	pcall(function() obj:Remove() end)
+	if numeric then return "num" end
+	return false
+end
+
+ESP.Mode = {}   -- kind -> true | "num" | false
+
+if hasDrawing then
+	for kind in pairs(ESP.Supported) do
+		local mode = probe(kind)
+		ESP.Mode[kind] = mode
+		ESP.Supported[kind] = (mode ~= false)
+		if mode == false then
+			table.insert(ESP.Missing, kind)
+		elseif mode == "num" then
+			warn("[2t1 ESP] " .. kind .. " needs numeric booleans in this executor, using a compatibility wrapper.")
+		end
+	end
+	if #ESP.Missing > 0 then
+		warn("[2t1 ESP] Unsupported Drawing types in this executor: " .. table.concat(ESP.Missing, ", "))
+	end
+	-- fall back to whatever the executor can actually draw
+	if not ESP.Supported.Square then
+		ESP.Settings.Box.Style  = "corner"
+		ESP.Settings.Box.Filled = false
+	end
+	if not ESP.Supported.Circle   then ESP.Settings.HeadDot.Enabled   = false end
+	if not ESP.Supported.Triangle then ESP.Settings.OffScreen.Enabled = false end
+end
+
+-- Prints exactly what this executor can and cannot do. Handy when a feature
+-- silently does nothing and you want to know whether it is your settings or
+-- the executor.
+function ESP:Diagnose()
+	print("=== 2t1 ESP capability report ===")
+	print("Drawing API present :", hasDrawing)
+	for kind, mode in pairs(ESP.Mode) do
+		local label = (mode == true and "native")
+			or (mode == "num" and "numeric-boolean wrapper")
+			or "UNSUPPORTED"
+		print(string.format("  %-9s %s", kind, label))
+	end
+	local okHl = pcall(function()
+		local h = Instance.new("Highlight"); h:Destroy()
+	end)
+	print("Highlight (chams)   :", okHl and "available" or "UNSUPPORTED")
+	print("=================================")
+	return ESP.Mode
+end
+
+-- stand-in for an unsupported drawing type: swallows every read and write
+local DUMMY_MT = {
+	__index = function(_, k)
+		if k == "Remove" or k == "Destroy" then return function() end end
+		return nil
+	end,
+	__newindex = function() end,
+}
+local function makeDummy()
+	return setmetatable({}, DUMMY_MT)
+end
+
+local function safeNew(kind)
+	if not ESP.Supported[kind] then return makeDummy(), false end
+	local ok, obj = pcall(function() return Drawing.new(kind) end)
+	if not ok or not obj then
+		ESP.Supported[kind] = false
+		return makeDummy(), false
+	end
+	if ESP.Mode[kind] == "num" then
+		return boolProxy(obj), true
+	end
+	return obj, true
+end
+
+-- creates a drawing and configures it; anything that throws during setup
+-- retires that type instead of bubbling the error up to the caller
+local function build(kind, setup)
+	local obj, real = safeNew(kind)
+	if not real then return obj end
+	local ok = pcall(setup, obj)
+	if ok then return obj end
+
+	pcall(function() obj:Remove() end)
+	ESP.Supported[kind] = false
+	ESP.Mode[kind] = false
+	local already = false
+	for _, k in ipairs(ESP.Missing) do
+		if k == kind then already = true break end
+	end
+	if not already then table.insert(ESP.Missing, kind) end
+	warn("[2t1 ESP] " .. kind .. " could not be configured, disabling features that use it.")
+	return makeDummy()
+end
 
 local R15_BONES = {
 	{ "Head", "UpperTorso" },
@@ -142,40 +289,40 @@ local MAX_BONES = #R15_BONES
 
 -- ---------- drawing helpers ----------
 local function newLine()
-	local l = Drawing.new("Line")
-	l.Visible = false; l.Thickness = 1; l.Transparency = 1
-	l.Color = Color3.new(1, 1, 1)
-	return l
+	return build("Line", function(l)
+		l.Visible = false; l.Thickness = 1; l.Transparency = 1
+		l.Color = Color3.new(1, 1, 1)
+	end)
 end
 
 local function newText()
-	local t = Drawing.new("Text")
-	t.Visible = false; t.Center = true; t.Outline = true
-	t.Size = 13; t.Font = 2; t.Transparency = 1
-	t.Color = Color3.new(1, 1, 1)
-	return t
+	return build("Text", function(t)
+		t.Visible = false; t.Center = true; t.Outline = true
+		t.Size = 13; t.Font = 2; t.Transparency = 1
+		t.Color = Color3.new(1, 1, 1)
+	end)
 end
 
 local function newSquare()
-	local sq = Drawing.new("Square")
-	sq.Visible = false; sq.Thickness = 1; sq.Filled = false; sq.Transparency = 1
-	sq.Color = Color3.new(1, 1, 1)
-	return sq
+	return build("Square", function(sq)
+		sq.Visible = false; sq.Thickness = 1; sq.Filled = false
+		sq.Transparency = 1; sq.Color = Color3.new(1, 1, 1)
+	end)
 end
 
 local function newCircle()
-	local c = Drawing.new("Circle")
-	c.Visible = false; c.Thickness = 1; c.Filled = false
-	c.NumSides = 14; c.Radius = 4; c.Transparency = 1
-	c.Color = Color3.new(1, 1, 1)
-	return c
+	return build("Circle", function(c)
+		c.Visible = false; c.Thickness = 1; c.Filled = false
+		c.NumSides = 14; c.Radius = 4; c.Transparency = 1
+		c.Color = Color3.new(1, 1, 1)
+	end)
 end
 
 local function newTriangle()
-	local t = Drawing.new("Triangle")
-	t.Visible = false; t.Thickness = 2; t.Filled = true; t.Transparency = 1
-	t.Color = Color3.new(1, 1, 1)
-	return t
+	return build("Triangle", function(t)
+		t.Visible = false; t.Thickness = 2; t.Filled = true
+		t.Transparency = 1; t.Color = Color3.new(1, 1, 1)
+	end)
 end
 
 -- ---------- pool ----------
@@ -275,7 +422,17 @@ local function computeBox(hrp, head)
 end
 
 local raycastParams = RaycastParams.new()
-raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+do
+	-- Blacklist was renamed to Exclude; support both
+	local ok = pcall(function()
+		raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	end)
+	if not ok then
+		pcall(function()
+			raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+		end)
+	end
+end
 
 local function isVisible(char, targetPos)
 	local myChar = LocalPlayer.Character
@@ -307,7 +464,8 @@ local function ensureHighlight(p, char)
 	end
 	if not p.highlight or p.highlight.Parent ~= char then
 		if p.highlight then p.highlight:Destroy() end
-		local hl = Instance.new("Highlight")
+		local okHl, hl = pcall(function() return Instance.new("Highlight") end)
+		if not okHl or not hl then return end
 		hl.Name = "2t1_Chams"
 		hl.Adornee = char
 		hl.FillColor = S.Chams.FillColor
@@ -626,7 +784,12 @@ local function addPlayer(plr)
 	if plr == LocalPlayer then return end
 	if objects[plr] then return end
 	if not hasDrawing then return end
-	objects[plr] = createPool()
+	local ok, pool = pcall(createPool)
+	if ok and pool then
+		objects[plr] = pool
+	else
+		warn("[2t1 ESP] Could not build drawings for " .. plr.Name .. ": " .. tostring(pool))
+	end
 end
 
 local function removePlayer(plr)
@@ -639,8 +802,12 @@ end
 function ESP:Init()
 	if running then return true end
 	if not hasDrawing then
-		warn("[2t1 ESP] Drawing API not available in this executor.")
-		return false
+		warn("[2t1 ESP] Drawing API not available in this executor. ESP is disabled.")
+		return false, "no drawing api"
+	end
+	if not ESP.Supported.Line or not ESP.Supported.Text then
+		warn("[2t1 ESP] This executor is missing core Drawing types. ESP is disabled.")
+		return false, "missing core types"
 	end
 	running = true
 
@@ -649,9 +816,11 @@ function ESP:Init()
 		Camera = Workspace.CurrentCamera
 	end)
 
-	for _, plr in ipairs(Players:GetPlayers()) do addPlayer(plr) end
-	Players.PlayerAdded:Connect(addPlayer)
-	Players.PlayerRemoving:Connect(removePlayer)
+	for _, plr in ipairs(Players:GetPlayers()) do
+		pcall(addPlayer, plr)
+	end
+	Players.PlayerAdded:Connect(function(plr) pcall(addPlayer, plr) end)
+	Players.PlayerRemoving:Connect(function(plr) pcall(removePlayer, plr) end)
 
 	conn = RunService.RenderStepped:Connect(function(dt)
 		if not S.Enabled then
@@ -701,6 +870,28 @@ end
 function ESP:BuildUI(tab)
 	-- ---------- general ----------
 	local main = tab:Section({ Name = "ESP", Icon = "scan", Default = true })
+
+	local wrapped = {}
+	for kind, mode in pairs(ESP.Mode) do
+		if mode == "num" then table.insert(wrapped, kind) end
+	end
+	table.sort(wrapped)
+
+	if #ESP.Missing > 0 then
+		main:Paragraph({
+			Title = "Limited support",
+			Content = "Your executor does not provide these Drawing types: "
+				.. table.concat(ESP.Missing, ", ")
+				.. ". The features that rely on them are hidden. Everything else works normally."
+		})
+	elseif #wrapped > 0 then
+		main:Paragraph({
+			Title = "Compatibility mode",
+			Content = "These Drawing types needed a small compatibility wrapper on your executor: "
+				.. table.concat(wrapped, ", ")
+				.. ". Everything still works, there is nothing you need to change."
+		})
+	end
 
 	main:Toggle({
 		Name = "Enabled", Icon = "eye", Flag = "esp_enabled", Default = false,
@@ -766,7 +957,8 @@ function ESP:BuildUI(tab)
 		Callback = function(v) S.Box.Enabled = v end })
 	box:Dropdown({
 		Name = "Style", Icon = "layout", Flag = "esp_box_style",
-		List = { "corner", "full" }, Default = "corner",
+		List = ESP.Supported.Square and { "corner", "full" } or { "corner" },
+		Default = "corner",
 		Tooltip = "Corner draws only the eight bracket segments. Full draws a complete rectangle.",
 		Callback = function(v) S.Box.Style = v end
 	})
@@ -776,11 +968,13 @@ function ESP:BuildUI(tab)
 	box:Toggle({ Name = "Outline", Icon = "layers", Flag = "esp_box_outline", Default = true,
 		Tooltip = "Adds a dark border so the box stays readable on bright maps.",
 		Callback = function(v) S.Box.Outline = v end })
-	box:Toggle({ Name = "Filled", Icon = "palette", Flag = "esp_box_filled", Default = false,
-		Callback = function(v) S.Box.Filled = v end })
-	box:Slider({ Name = "Fill Opacity", Icon = "sliders", Flag = "esp_box_alpha",
-		Min = 0, Max = 1, Default = 0.18, Rounding = 2,
-		Callback = function(v) S.Box.FillAlpha = 1 - v end })
+	if ESP.Supported.Square then
+		box:Toggle({ Name = "Filled", Icon = "palette", Flag = "esp_box_filled", Default = false,
+			Callback = function(v) S.Box.Filled = v end })
+		box:Slider({ Name = "Fill Opacity", Icon = "sliders", Flag = "esp_box_alpha",
+			Min = 0, Max = 1, Default = 0.18, Rounding = 2,
+			Callback = function(v) S.Box.FillAlpha = 1 - v end })
+	end
 
 	-- ---------- text ----------
 	local txt = tab:Section({ Name = "Text", Icon = "type", Default = false })
@@ -850,26 +1044,29 @@ function ESP:BuildUI(tab)
 
 	ex:Divider()
 
-	ex:Toggle({ Name = "Head Dot", Icon = "target", Flag = "esp_headdot", Default = false,
-		Tooltip = "A circle over the head that scales with distance.",
-		Callback = function(v) S.HeadDot.Enabled = v end })
-	ex:Slider({ Name = "Dot Radius", Icon = "sliders", Flag = "esp_headdot_r",
-		Min = 1, Max = 12, Default = 4,
-		Callback = function(v) S.HeadDot.Radius = v end })
-	ex:Toggle({ Name = "Dot Filled", Icon = "palette", Flag = "esp_headdot_fill", Default = false,
-		Callback = function(v) S.HeadDot.Filled = v end })
+	if ESP.Supported.Circle then
+		ex:Toggle({ Name = "Head Dot", Icon = "target", Flag = "esp_headdot", Default = false,
+			Tooltip = "A circle over the head that scales with distance.",
+			Callback = function(v) S.HeadDot.Enabled = v end })
+		ex:Slider({ Name = "Dot Radius", Icon = "sliders", Flag = "esp_headdot_r",
+			Min = 1, Max = 12, Default = 4,
+			Callback = function(v) S.HeadDot.Radius = v end })
+		ex:Toggle({ Name = "Dot Filled", Icon = "palette", Flag = "esp_headdot_fill", Default = false,
+			Callback = function(v) S.HeadDot.Filled = v end })
+		ex:Divider()
+	end
 
-	ex:Divider()
-
-	ex:Toggle({ Name = "Off-Screen Arrows", Icon = "compass", Flag = "esp_offscreen", Default = false,
-		Tooltip = "Points toward targets that are outside your view.",
-		Callback = function(v) S.OffScreen.Enabled = v end })
-	ex:Slider({ Name = "Arrow Distance", Icon = "move", Flag = "esp_offscreen_r",
-		Min = 60, Max = 400, Default = 180,
-		Callback = function(v) S.OffScreen.Radius = v end })
-	ex:Slider({ Name = "Arrow Size", Icon = "sliders", Flag = "esp_offscreen_s",
-		Min = 6, Max = 30, Default = 13,
-		Callback = function(v) S.OffScreen.Size = v end })
+	if ESP.Supported.Triangle then
+		ex:Toggle({ Name = "Off-Screen Arrows", Icon = "compass", Flag = "esp_offscreen", Default = false,
+			Tooltip = "Points toward targets that are outside your view.",
+			Callback = function(v) S.OffScreen.Enabled = v end })
+		ex:Slider({ Name = "Arrow Distance", Icon = "move", Flag = "esp_offscreen_r",
+			Min = 60, Max = 400, Default = 180,
+			Callback = function(v) S.OffScreen.Radius = v end })
+		ex:Slider({ Name = "Arrow Size", Icon = "sliders", Flag = "esp_offscreen_s",
+			Min = 6, Max = 30, Default = 13,
+			Callback = function(v) S.OffScreen.Size = v end })
+	end
 
 	-- ---------- chams ----------
 	local ch = tab:Section({ Name = "Chams", Icon = "layers", Default = false })
@@ -896,6 +1093,9 @@ function ESP:BuildUI(tab)
 	-- ---------- maintenance ----------
 	local mt = tab:Section({ Name = "Maintenance", Icon = "wrench", Default = false })
 
+	mt:Button({ Name = "Capability Report", Icon = "terminal",
+		Tooltip = "Prints to the console which Drawing types your executor supports.",
+		Callback = function() ESP:Diagnose() end })
 	mt:Button({ Name = "Rebuild Drawings", Icon = "refresh",
 		Tooltip = "Recreates every drawing object. Use if the overlay ever gets stuck.",
 		Callback = function() ESP:Refresh() end })
