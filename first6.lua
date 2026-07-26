@@ -505,7 +505,7 @@ ICONS.Copy, ICONS.Download, ICONS.Heart     = ICONS.copy, ICONS.download, ICONS.
 ICONS.Target, ICONS.Sliders, ICONS.Type     = ICONS.target, ICONS.sliders, ICONS.type
 ICONS.List                                   = ICONS.list
 
-local DEFAULT_SECTION_ICON = ICONS.zap
+local DEFAULT_SECTION_ICON = "zap"
 
 -- Resolve an icon reference: "sword" | "rbxassetid://123" | 123 | nil
 local function ResolveIcon(ref, fallback)
@@ -518,22 +518,701 @@ local function ResolveIcon(ref, fallback)
 	return ICONS[key] or ICONS[ref] or fallback
 end
 
+-- ============================================
+-- VECTOR ICONS
+--
+-- Drawn from UI primitives on a 24x24 grid, the same grid Lucide and
+-- Feather use. Nothing here depends on an uploaded asset, so every icon
+-- renders on every executor, takes the theme colour, and stays crisp at
+-- any size.
+--
+-- Primitives:
+--   bar  (x, y, w, h, rot, radius)   a rounded rectangle
+--   dot  (x, y, d)                   a filled circle
+--   ring (x, y, d, thickness)        a circle outline
+--   box  (x, y, w, h, thickness, r)  a rectangle outline
+-- Coordinates are top-left based, in grid units.
+-- ============================================
+
+local ICON_GRID = 24
+
+local function iconBar(parent, s, x, y, w, h, rot, radius, z)
+	local f = Instance.new("Frame")
+	f.AnchorPoint = Vector2.new(0.5, 0.5)
+	f.Position = UDim2.fromOffset((x + w * 0.5) * s, (y + h * 0.5) * s)
+	f.Size = UDim2.fromOffset(math.max(w * s, 1), math.max(h * s, 1))
+	f.Rotation = rot or 0
+	f.BackgroundColor3 = Color3.new(1, 1, 1)
+	f.BorderSizePixel = 0
+	f.ZIndex = z or 9
+	f.Parent = parent
+
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, math.max((radius or 0.9) * s, 1))
+	c.Parent = f
+	return f
+end
+
+local function iconDot(parent, s, x, y, d, z)
+	local f = Instance.new("Frame")
+	f.AnchorPoint = Vector2.new(0.5, 0.5)
+	f.Position = UDim2.fromOffset((x + d * 0.5) * s, (y + d * 0.5) * s)
+	f.Size = UDim2.fromOffset(math.max(d * s, 1), math.max(d * s, 1))
+	f.BackgroundColor3 = Color3.new(1, 1, 1)
+	f.BorderSizePixel = 0
+	f.ZIndex = z or 9
+	f.Parent = parent
+
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(1, 0)
+	c.Parent = f
+	return f
+end
+
+local function iconRing(parent, s, x, y, d, thickness, z)
+	local f = Instance.new("Frame")
+	f.AnchorPoint = Vector2.new(0.5, 0.5)
+	f.Position = UDim2.fromOffset((x + d * 0.5) * s, (y + d * 0.5) * s)
+	f.Size = UDim2.fromOffset(d * s, d * s)
+	f.BackgroundTransparency = 1
+	f.BorderSizePixel = 0
+	f.ZIndex = z or 9
+	f.Parent = parent
+
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(1, 0)
+	c.Parent = f
+
+	local st = Instance.new("UIStroke")
+	st.Color = Color3.new(1, 1, 1)
+	st.Thickness = math.max((thickness or 1.8) * s, 1)
+	st.Parent = f
+	return f, st
+end
+
+local function iconBox(parent, s, x, y, w, h, thickness, radius, z)
+	local f = Instance.new("Frame")
+	f.AnchorPoint = Vector2.new(0.5, 0.5)
+	f.Position = UDim2.fromOffset((x + w * 0.5) * s, (y + h * 0.5) * s)
+	f.Size = UDim2.fromOffset(w * s, h * s)
+	f.BackgroundTransparency = 1
+	f.BorderSizePixel = 0
+	f.ZIndex = z or 9
+	f.Parent = parent
+
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, math.max((radius or 2.5) * s, 1))
+	c.Parent = f
+
+	local st = Instance.new("UIStroke")
+	st.Color = Color3.new(1, 1, 1)
+	st.Thickness = math.max((thickness or 1.8) * s, 1)
+	st.Parent = f
+	return f, st
+end
+
+-- a chevron, the shape used by every arrow in the set
+local function iconChevron(parent, s, cx, cy, span, rot, thick)
+	local g = Instance.new("Frame")
+	g.AnchorPoint = Vector2.new(0.5, 0.5)
+	g.Position = UDim2.fromOffset(cx * s, cy * s)
+	g.Size = UDim2.fromOffset(span * s, span * s)
+	g.BackgroundTransparency = 1
+	g.Rotation = rot or 0
+	g.ZIndex = 9
+	g.Parent = parent
+
+	local half = span * 0.5
+	local arm = span * 0.72
+	iconBar(g, s, half - arm * 0.5, half - arm * 0.5 - (thick or 1.8) * 0.5,
+		arm, thick or 1.8, -45, nil, 10)
+	iconBar(g, s, half - arm * 0.5, half + arm * 0.5 - (thick or 1.8) * 0.5,
+		arm, thick or 1.8, 45, nil, 10)
+	return g
+end
+
+-- ============================================
+-- ICON DEFINITIONS
+-- each receives (g, s) where g is the container and s the unit scale
+-- ============================================
+local VECTOR_ICONS = {}
+
+-- ---------- basic marks ----------
+VECTOR_ICONS.plus = function(g, s)
+	iconBar(g, s, 5, 11, 14, 2)
+	iconBar(g, s, 11, 5, 2, 14)
+end
+
+VECTOR_ICONS.minus = function(g, s)
+	iconBar(g, s, 5, 11, 14, 2)
+end
+
+VECTOR_ICONS.x = function(g, s)
+	iconBar(g, s, 5, 11, 14, 2, 45)
+	iconBar(g, s, 5, 11, 14, 2, -45)
+end
+
+VECTOR_ICONS.check = function(g, s)
+	iconBar(g, s, 4.5, 13, 7, 2, -45)
+	iconBar(g, s, 8.5, 11.5, 12, 2, 45)
+end
+
+VECTOR_ICONS.dot = function(g, s)
+	iconDot(g, s, 9, 9, 6)
+end
+
+VECTOR_ICONS.circle = function(g, s)
+	iconRing(g, s, 4, 4, 16, 1.9)
+end
+
+-- ---------- arrows ----------
+VECTOR_ICONS.chevronup = function(g, s)
+	iconChevron(g, s, 12, 12, 12, -90)
+end
+VECTOR_ICONS.chevrondown = function(g, s)
+	iconChevron(g, s, 12, 12, 12, 90)
+end
+VECTOR_ICONS.arrowright = function(g, s)
+	iconBar(g, s, 4, 11, 15, 2)
+	iconChevron(g, s, 16.5, 12, 9, 0)
+end
+VECTOR_ICONS.arrowleft = function(g, s)
+	iconBar(g, s, 5, 11, 15, 2)
+	iconChevron(g, s, 7.5, 12, 9, 180)
+end
+VECTOR_ICONS.arrowupdown = function(g, s)
+	iconBar(g, s, 11, 4, 2, 16)
+	iconChevron(g, s, 12, 6.5, 9, -90)
+	iconChevron(g, s, 12, 17.5, 9, 90)
+end
+VECTOR_ICONS.cornerright = function(g, s)
+	iconBar(g, s, 6, 5, 2, 11)
+	iconBar(g, s, 6, 14, 11, 2)
+	iconChevron(g, s, 16, 15, 8, 0)
+end
+VECTOR_ICONS.move = function(g, s)
+	iconBar(g, s, 11, 5, 2, 14)
+	iconBar(g, s, 5, 11, 14, 2)
+	iconChevron(g, s, 12, 5.5, 7, -90)
+	iconChevron(g, s, 12, 18.5, 7, 90)
+	iconChevron(g, s, 5.5, 12, 7, 180)
+	iconChevron(g, s, 18.5, 12, 7, 0)
+end
+VECTOR_ICONS.download = function(g, s)
+	iconBar(g, s, 11, 3, 2, 11)
+	iconChevron(g, s, 12, 12.5, 9, 90)
+	iconBar(g, s, 4, 18, 16, 2)
+end
+VECTOR_ICONS.upload = function(g, s)
+	iconBar(g, s, 11, 6, 2, 11)
+	iconChevron(g, s, 12, 7.5, 9, -90)
+	iconBar(g, s, 4, 18, 16, 2)
+end
+VECTOR_ICONS.refresh = function(g, s)
+	local _, st = iconRing(g, s, 4.5, 4.5, 15, 1.9)
+	local grad = Instance.new("UIGradient")
+	grad.Rotation = 45
+	grad.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.62, 0),
+		NumberSequenceKeypoint.new(0.66, 1),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	grad.Parent = st
+	iconChevron(g, s, 17.5, 7, 8, -45)
+end
+
+-- ---------- shapes ----------
+VECTOR_ICONS.box = function(g, s)
+	iconBox(g, s, 4, 4, 16, 16, 1.9, 3)
+end
+VECTOR_ICONS.grid = function(g, s)
+	iconBox(g, s, 3.5, 3.5, 7.5, 7.5, 1.8, 1.8)
+	iconBox(g, s, 13, 3.5, 7.5, 7.5, 1.8, 1.8)
+	iconBox(g, s, 3.5, 13, 7.5, 7.5, 1.8, 1.8)
+	iconBox(g, s, 13, 13, 7.5, 7.5, 1.8, 1.8)
+end
+VECTOR_ICONS.layers = function(g, s)
+	iconBar(g, s, 6.5, 3.5, 11, 11, 45, 1.6)
+	iconBar(g, s, 4, 14, 16, 1.9)
+	iconBar(g, s, 4, 17.5, 16, 1.9)
+end
+VECTOR_ICONS.layout = function(g, s)
+	iconBox(g, s, 3.5, 4, 17, 16, 1.8, 2.6)
+	iconBar(g, s, 3.5, 9, 17, 1.8, 0, 0)
+	iconBar(g, s, 9.5, 9, 1.8, 11, 0, 0)
+end
+VECTOR_ICONS.list = function(g, s)
+	iconDot(g, s, 3.5, 5.5, 2.4)
+	iconDot(g, s, 3.5, 10.8, 2.4)
+	iconDot(g, s, 3.5, 16.1, 2.4)
+	iconBar(g, s, 8.5, 5.8, 12, 1.9)
+	iconBar(g, s, 8.5, 11.1, 12, 1.9)
+	iconBar(g, s, 8.5, 16.4, 12, 1.9)
+end
+VECTOR_ICONS.sliders = function(g, s)
+	iconBar(g, s, 3.5, 6, 17, 1.8)
+	iconBar(g, s, 3.5, 16.2, 17, 1.8)
+	iconDot(g, s, 7, 4.2, 5.4)
+	iconDot(g, s, 13, 14.4, 5.4)
+end
+VECTOR_ICONS.filter = function(g, s)
+	iconBar(g, s, 3.5, 5.5, 17, 1.9)
+	iconBar(g, s, 6.5, 11, 11, 1.9)
+	iconBar(g, s, 9.5, 16.5, 5, 1.9)
+end
+VECTOR_ICONS.toggleon = function(g, s)
+	iconBox(g, s, 2.5, 7, 19, 10, 1.8, 5)
+	iconDot(g, s, 13, 9.4, 5.2)
+end
+VECTOR_ICONS.type = function(g, s)
+	iconBar(g, s, 4, 5, 16, 2)
+	iconBar(g, s, 11, 5, 2, 15)
+	iconBar(g, s, 7.5, 18.5, 9, 1.8)
+end
+
+-- ---------- targeting ----------
+VECTOR_ICONS.target = function(g, s)
+	iconRing(g, s, 2.5, 2.5, 19, 1.8)
+	iconRing(g, s, 7, 7, 10, 1.8)
+	iconDot(g, s, 10.6, 10.6, 2.8)
+end
+VECTOR_ICONS.crosshair = function(g, s)
+	iconRing(g, s, 4, 4, 16, 1.8)
+	iconBar(g, s, 11, 1.5, 2, 5)
+	iconBar(g, s, 11, 17.5, 2, 5)
+	iconBar(g, s, 1.5, 11, 5, 2)
+	iconBar(g, s, 17.5, 11, 5, 2)
+end
+VECTOR_ICONS.scan = function(g, s)
+	-- four corner brackets
+	iconBar(g, s, 3, 3, 6, 1.9);  iconBar(g, s, 3, 3, 1.9, 6)
+	iconBar(g, s, 15, 3, 6, 1.9); iconBar(g, s, 19.1, 3, 1.9, 6)
+	iconBar(g, s, 3, 19.1, 6, 1.9); iconBar(g, s, 3, 15, 1.9, 6)
+	iconBar(g, s, 15, 19.1, 6, 1.9); iconBar(g, s, 19.1, 15, 1.9, 6)
+	iconBar(g, s, 5.5, 11, 13, 1.8)
+end
+VECTOR_ICONS.radar = function(g, s)
+	iconRing(g, s, 3, 3, 18, 1.7)
+	iconRing(g, s, 7.5, 7.5, 9, 1.5)
+	iconBar(g, s, 11.2, 5.5, 1.7, 7.5, -32, 0.6)
+	iconDot(g, s, 10.8, 10.8, 2.4)
+end
+VECTOR_ICONS.compass = function(g, s)
+	iconRing(g, s, 3, 3, 18, 1.8)
+	iconBar(g, s, 8.5, 8.5, 7, 7, 45, 1.2)
+end
+VECTOR_ICONS.eye = function(g, s)
+	local f = Instance.new("Frame")
+	f.AnchorPoint = Vector2.new(0.5, 0.5)
+	f.Position = UDim2.fromOffset(12 * s, 12 * s)
+	f.Size = UDim2.fromOffset(19 * s, 11.5 * s)
+	f.BackgroundTransparency = 1
+	f.ZIndex = 9
+	f.Parent = g
+	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(1, 0); c.Parent = f
+	local st = Instance.new("UIStroke")
+	st.Color = Color3.new(1, 1, 1); st.Thickness = math.max(1.8 * s, 1); st.Parent = f
+	iconRing(g, s, 8.6, 8.6, 6.8, 1.8)
+end
+VECTOR_ICONS.eyeoff = function(g, s)
+	VECTOR_ICONS.eye(g, s)
+	iconBar(g, s, 2.5, 11, 19, 2.2, -38)
+end
+
+-- ---------- people ----------
+VECTOR_ICONS.user = function(g, s)
+	iconRing(g, s, 7.5, 3, 9, 1.8)
+	local f = Instance.new("Frame")
+	f.AnchorPoint = Vector2.new(0.5, 0.5)
+	f.Position = UDim2.fromOffset(12 * s, 19.5 * s)
+	f.Size = UDim2.fromOffset(15 * s, 9 * s)
+	f.BackgroundTransparency = 1
+	f.ZIndex = 9
+	f.Parent = g
+	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6 * s); c.Parent = f
+	local st = Instance.new("UIStroke")
+	st.Color = Color3.new(1, 1, 1); st.Thickness = math.max(1.8 * s, 1); st.Parent = f
+end
+VECTOR_ICONS.users = function(g, s)
+	iconRing(g, s, 4.5, 3.5, 7.5, 1.7)
+	local f = Instance.new("Frame")
+	f.AnchorPoint = Vector2.new(0.5, 0.5)
+	f.Position = UDim2.fromOffset(8.2 * s, 18.5 * s)
+	f.Size = UDim2.fromOffset(12 * s, 8 * s)
+	f.BackgroundTransparency = 1
+	f.ZIndex = 9
+	f.Parent = g
+	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 5 * s); c.Parent = f
+	local st = Instance.new("UIStroke")
+	st.Color = Color3.new(1, 1, 1); st.Thickness = math.max(1.7 * s, 1); st.Parent = f
+
+	iconRing(g, s, 13.5, 5, 6, 1.6)
+	iconBar(g, s, 15.5, 14.5, 6, 1.7)
+	iconBar(g, s, 19.8, 14.5, 1.7, 4)
+end
+
+-- ---------- feedback ----------
+VECTOR_ICONS.info = function(g, s)
+	iconRing(g, s, 3, 3, 18, 1.8)
+	iconDot(g, s, 10.9, 6.6, 2.2)
+	iconBar(g, s, 10.9, 10.5, 2.2, 7.5)
+end
+VECTOR_ICONS.alert = function(g, s)
+	iconRing(g, s, 3, 3, 18, 1.8)
+	iconBar(g, s, 10.9, 6.2, 2.2, 8)
+	iconDot(g, s, 10.9, 15.6, 2.4)
+end
+VECTOR_ICONS.bell = function(g, s)
+	local f = Instance.new("Frame")
+	f.AnchorPoint = Vector2.new(0.5, 0.5)
+	f.Position = UDim2.fromOffset(12 * s, 10.5 * s)
+	f.Size = UDim2.fromOffset(13 * s, 13 * s)
+	f.BackgroundTransparency = 1
+	f.ZIndex = 9
+	f.Parent = g
+	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6.5 * s); c.Parent = f
+	local st = Instance.new("UIStroke")
+	st.Color = Color3.new(1, 1, 1); st.Thickness = math.max(1.8 * s, 1); st.Parent = f
+
+	iconBar(g, s, 3.5, 16, 17, 1.9)
+	iconBar(g, s, 10.6, 2, 2.8, 2.6)
+	iconDot(g, s, 10.4, 18.6, 3.2)
+end
+VECTOR_ICONS.clock = function(g, s)
+	iconRing(g, s, 3, 3, 18, 1.8)
+	iconBar(g, s, 11.1, 6.5, 1.8, 6.2)
+	iconBar(g, s, 11.6, 11.2, 5, 1.8)
+end
+VECTOR_ICONS.heart = function(g, s)
+	iconRing(g, s, 4.5, 5, 8, 2.6)
+	iconRing(g, s, 11.5, 5, 8, 2.6)
+	iconBar(g, s, 7.5, 10.5, 9, 9, 45, 1.4)
+end
+VECTOR_ICONS.star = function(g, s)
+	iconBar(g, s, 10.8, 2.5, 2.4, 19, 0, 1.2)
+	iconBar(g, s, 2.5, 10.8, 19, 2.4, 0, 1.2)
+	iconBar(g, s, 5.5, 5.5, 13, 2, 45, 1)
+	iconBar(g, s, 5.5, 5.5, 13, 2, -45, 1)
+end
+VECTOR_ICONS.sparkles = function(g, s)
+	iconBar(g, s, 7.2, 1.5, 1.8, 12, 0, 0.9)
+	iconBar(g, s, 2.1, 6.6, 12, 1.8, 0, 0.9)
+	iconBar(g, s, 15.6, 12, 1.6, 9, 0, 0.8)
+	iconBar(g, s, 11.9, 15.7, 9, 1.6, 0, 0.8)
+end
+
+-- ---------- system ----------
+VECTOR_ICONS.gear = function(g, s)
+	iconRing(g, s, 6.5, 6.5, 11, 1.8)
+	for i = 0, 5 do
+		local a = math.rad(i * 60)
+		local cx = 12 + math.cos(a) * 8.6
+		local cy = 12 + math.sin(a) * 8.6
+		iconBar(g, s, cx - 1.5, cy - 1.5, 3.6, 3, math.deg(a), 0.8)
+	end
+end
+VECTOR_ICONS.settings = VECTOR_ICONS.gear
+VECTOR_ICONS.wrench = function(g, s)
+	iconBar(g, s, 8, 8.5, 13, 2.6, 40, 1.2)
+	iconRing(g, s, 2.5, 2.5, 8.5, 2.3)
+end
+VECTOR_ICONS.terminal = function(g, s)
+	iconBox(g, s, 2.5, 4, 19, 16, 1.8, 2.6)
+	iconChevron(g, s, 8.5, 11, 7, 0)
+	iconBar(g, s, 12.5, 15, 6, 1.7)
+end
+VECTOR_ICONS.command = function(g, s)
+	iconBox(g, s, 7.5, 7.5, 9, 9, 1.8, 1.4)
+	iconRing(g, s, 2.5, 2.5, 5.5, 1.8)
+	iconRing(g, s, 16, 2.5, 5.5, 1.8)
+	iconRing(g, s, 2.5, 16, 5.5, 1.8)
+	iconRing(g, s, 16, 16, 5.5, 1.8)
+end
+VECTOR_ICONS.keyboard = function(g, s)
+	iconBox(g, s, 1.5, 6, 21, 12, 1.7, 2.4)
+	for i = 0, 3 do iconDot(g, s, 4.5 + i * 4, 9, 1.9) end
+	for i = 0, 2 do iconDot(g, s, 6 + i * 4, 12.5, 1.9) end
+	iconBar(g, s, 7.5, 14.6, 9, 1.7)
+end
+VECTOR_ICONS.search = function(g, s)
+	iconRing(g, s, 3, 3, 13.5, 1.9)
+	iconBar(g, s, 14.5, 15.5, 7, 2.1, 45)
+end
+VECTOR_ICONS.save = function(g, s)
+	iconBox(g, s, 3.5, 3.5, 17, 17, 1.8, 2.4)
+	iconBar(g, s, 7.5, 3.5, 9, 6, 0, 0.6)
+	iconBox(g, s, 7, 13, 10, 7.5, 1.7, 1.2)
+end
+VECTOR_ICONS.copy = function(g, s)
+	iconBox(g, s, 7.5, 7.5, 13, 13, 1.8, 2.2)
+	iconBar(g, s, 3.5, 3.5, 13, 1.8)
+	iconBar(g, s, 3.5, 3.5, 1.8, 13)
+end
+VECTOR_ICONS.trash = function(g, s)
+	iconBar(g, s, 3, 5.5, 18, 1.9)
+	iconBar(g, s, 9, 2.5, 6, 1.9)
+	iconBox(g, s, 5.5, 7.5, 13, 14, 1.8, 2)
+	iconBar(g, s, 9.5, 10.5, 1.6, 8)
+	iconBar(g, s, 13, 10.5, 1.6, 8)
+end
+VECTOR_ICONS.edit = function(g, s)
+	iconBar(g, s, 5.5, 10.5, 15, 3, -45, 0.8)
+	iconBar(g, s, 3, 17.5, 4, 4, 0, 0.8)
+	iconBar(g, s, 3.5, 19.5, 17, 1.8)
+end
+VECTOR_ICONS.link = function(g, s)
+	iconBar(g, s, 3, 10.5, 10, 3.2, -32, 1.6)
+	iconBar(g, s, 11, 10.5, 10, 3.2, -32, 1.6)
+	iconBar(g, s, 8.5, 10.8, 7, 2.2, -32, 1.1)
+end
+VECTOR_ICONS.lock = function(g, s)
+	iconBox(g, s, 4, 10, 16, 11, 1.8, 2.4)
+	iconRing(g, s, 7, 2.5, 10, 1.9)
+	iconBar(g, s, 5.5, 10, 13, 4, 0, 0)
+	iconDot(g, s, 10.8, 14, 2.6)
+end
+VECTOR_ICONS.unlock = function(g, s)
+	iconBox(g, s, 4, 10, 16, 11, 1.8, 2.4)
+	iconRing(g, s, 10, 2.5, 10, 1.9)
+	iconBar(g, s, 11.5, 10, 12, 4, 0, 0)
+	iconDot(g, s, 10.8, 14, 2.6)
+end
+VECTOR_ICONS.palette = function(g, s)
+	iconRing(g, s, 2.5, 2.5, 19, 1.8)
+	iconDot(g, s, 6.2, 6.2, 3)
+	iconDot(g, s, 13.5, 4.8, 3)
+	iconDot(g, s, 16.5, 11, 3)
+	iconDot(g, s, 8, 14.5, 3.4)
+end
+VECTOR_ICONS.globe = function(g, s)
+	iconRing(g, s, 3, 3, 18, 1.8)
+	iconBar(g, s, 3, 11.1, 18, 1.7)
+	local f, st = iconRing(g, s, 8, 3, 8, 1.7)
+	f.Size = UDim2.fromOffset(8 * s, 18 * s)
+	f.Position = UDim2.fromOffset(12 * s, 12 * s)
+end
+VECTOR_ICONS.activity = function(g, s)
+	iconBar(g, s, 2, 12.5, 5, 1.9)
+	iconBar(g, s, 6, 9, 5, 1.9, -52)
+	iconBar(g, s, 10.5, 9, 5, 1.9, 52)
+	iconBar(g, s, 14.5, 9.5, 5, 1.9, -60)
+	iconBar(g, s, 18, 12.5, 4, 1.9)
+end
+VECTOR_ICONS.home = function(g, s)
+	iconBar(g, s, 3.5, 8, 12, 2.1, -38)
+	iconBar(g, s, 9.5, 8, 12, 2.1, 38)
+	iconBox(g, s, 5.5, 10.5, 13, 10.5, 1.8, 1.8)
+	iconBar(g, s, 10, 15, 4, 6, 0, 0.6)
+end
+VECTOR_ICONS.shield = function(g, s)
+	iconBox(g, s, 4.5, 2.5, 15, 13, 1.9, 2.2)
+	iconBar(g, s, 7, 12.5, 8, 8, 45, 1.6)
+end
+VECTOR_ICONS.sword = function(g, s)
+	iconBar(g, s, 7.5, 1.5, 2.6, 16, 45, 0.8)
+	iconBar(g, s, 3.5, 16.5, 7, 2.1, 45)
+	iconBar(g, s, 2, 19, 4.5, 2.1, 0)
+	iconDot(g, s, 2, 18.5, 3.4)
+end
+VECTOR_ICONS.puzzle = function(g, s)
+	iconBox(g, s, 4, 4, 16, 16, 1.8, 2.4)
+	iconDot(g, s, 8.5, 1.8, 4.4)
+	iconDot(g, s, 17.8, 8.5, 4.4)
+end
+VECTOR_ICONS.package = function(g, s)
+	iconBox(g, s, 3.5, 6, 17, 14.5, 1.8, 2.2)
+	iconBar(g, s, 3.5, 10.5, 17, 1.7)
+	iconBar(g, s, 11.1, 10.5, 1.7, 10)
+	iconBar(g, s, 7, 2.5, 10, 4, 0, 1)
+end
+VECTOR_ICONS.sun = function(g, s)
+	iconRing(g, s, 7.5, 7.5, 9, 1.9)
+	for i = 0, 7 do
+		local a = math.rad(i * 45)
+		local cx = 12 + math.cos(a) * 9.8
+		local cy = 12 + math.sin(a) * 9.8
+		iconBar(g, s, cx - 1.8, cy - 0.85, 3.6, 1.7, math.deg(a))
+	end
+end
+VECTOR_ICONS.moon = function(g, s)
+	local f, st = iconRing(g, s, 3.5, 3.5, 17, 1.9)
+	local grad = Instance.new("UIGradient")
+	grad.Rotation = 20
+	grad.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.33, 1),
+		NumberSequenceKeypoint.new(0.4, 0),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	grad.Parent = st
+	local f2, st2 = iconRing(g, s, 8, 2, 15, 1.9)
+	local grad2 = Instance.new("UIGradient")
+	grad2.Rotation = 200
+	grad2.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.38, 1),
+		NumberSequenceKeypoint.new(0.45, 0),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	grad2.Parent = st2
+end
+VECTOR_ICONS.flame = function(g, s)
+	iconBar(g, s, 6.5, 8, 11, 11, 45, 5)
+	iconBar(g, s, 9.5, 2.5, 5, 8, 12, 2.4)
+end
+VECTOR_ICONS.skull = function(g, s)
+	iconRing(g, s, 3.5, 2.5, 17, 1.9)
+	iconDot(g, s, 7.5, 9, 3.4)
+	iconDot(g, s, 13, 9, 3.4)
+	iconBar(g, s, 6.5, 17.5, 11, 3.5, 0, 1.2)
+	iconBar(g, s, 10.9, 13.5, 2, 3)
+end
+VECTOR_ICONS.run = VECTOR_ICONS.activity
+VECTOR_ICONS.zap = function(g, s)
+	iconBar(g, s, 9, 1.5, 3, 11, 18, 1)
+	iconBar(g, s, 12, 11.5, 3, 11, 18, 1)
+	iconBar(g, s, 8, 10.5, 8, 2.4, 0, 0.8)
+end
+VECTOR_ICONS.footprints = VECTOR_ICONS.activity
+VECTOR_ICONS.bookmark = function(g, s)
+	iconBar(g, s, 5, 2.5, 1.9, 19)
+	iconBar(g, s, 17.1, 2.5, 1.9, 19)
+	iconBar(g, s, 5, 2.5, 14, 1.9)
+	iconBar(g, s, 5, 19.5, 8, 1.9, 40)
+	iconBar(g, s, 11, 19.5, 8, 1.9, -40)
+end
+
+-- aliases so older names keep working
+VECTOR_ICONS.crosshairs = VECTOR_ICONS.crosshair
+VECTOR_ICONS.cpu        = VECTOR_ICONS.command
+VECTOR_ICONS.code       = VECTOR_ICONS.terminal
+VECTOR_ICONS.database   = VECTOR_ICONS.package
+VECTOR_ICONS.wifi       = VECTOR_ICONS.radar
+VECTOR_ICONS.bomb       = VECTOR_ICONS.flame
+VECTOR_ICONS.maximize   = VECTOR_ICONS.move
+VECTOR_ICONS.plusone    = VECTOR_ICONS.plus
+
+-- ============================================
+-- ICON FACTORY
+-- Accepts a vector name, a registry name, an asset id, or a raw number.
+-- Returns { Frame, SetColor(colour, duration) }.
+-- ============================================
+local function MakeIcon(parent, ref, size, colour, z)
+	size = size or 16
+	colour = colour or Color3.new(1, 1, 1)
+
+	local container = Instance.new("Frame")
+	container.Name = "Icon"
+	container.Size = UDim2.fromOffset(size, size)
+	container.BackgroundTransparency = 1
+	container.ZIndex = z or 8
+	container.Parent = parent
+
+	local handle = { Frame = container, Parts = {}, Image = nil }
+
+	local key = nil
+	if typeof(ref) == "string" then
+		key = ref:lower():gsub("[%s%-_]", "")
+	end
+
+	if key and VECTOR_ICONS[key] then
+		local s = size / ICON_GRID
+		VECTOR_ICONS[key](container, s)
+
+		for _, d in ipairs(container:GetDescendants()) do
+			if d:IsA("Frame") then
+				d.BackgroundColor3 = colour
+				if d.BackgroundTransparency < 1 then
+					handle.Parts[#handle.Parts + 1] = { d, "BackgroundColor3" }
+				end
+			elseif d:IsA("UIStroke") then
+				d.Color = colour
+				handle.Parts[#handle.Parts + 1] = { d, "Color" }
+			end
+		end
+	else
+		-- fall back to an image asset
+		local id = ResolveIcon(ref, nil)
+		if not id then
+			container:Destroy()
+			return nil
+		end
+		local img = Instance.new("ImageLabel")
+		img.Size = UDim2.fromScale(1, 1)
+		img.BackgroundTransparency = 1
+		img.Image = id
+		img.ImageColor3 = colour
+		img.ScaleType = Enum.ScaleType.Fit
+		img.ZIndex = (z or 8) + 1
+		img.Parent = container
+		handle.Image = img
+		handle.Parts[#handle.Parts + 1] = { img, "ImageColor3" }
+	end
+
+	function handle:SetColor(c, dur)
+		if dur and dur > 0 then
+			for _, pair in ipairs(handle.Parts) do
+				TweenService:Create(pair[1], TweenInfo.new(dur, Enum.EasingStyle.Quart),
+					{ [pair[2]] = c }):Play()
+			end
+		else
+			for _, pair in ipairs(handle.Parts) do
+				pair[1][pair[2]] = c
+			end
+		end
+	end
+
+	function handle:SetTransparency(v)
+		for _, pair in ipairs(handle.Parts) do
+			local inst = pair[1]
+			if inst:IsA("UIStroke") then
+				inst.Transparency = v
+			elseif inst:IsA("ImageLabel") then
+				inst.ImageTransparency = v
+			else
+				inst.BackgroundTransparency = v
+			end
+		end
+	end
+
+	function handle:Destroy()
+		if container and container.Parent then container:Destroy() end
+	end
+
+	return handle
+end
+
+Library.MakeIcon = function(_, parent, ref, size, colour, z)
+	return MakeIcon(parent, ref, size, colour, z)
+end
+
+Library.VectorIcons = VECTOR_ICONS
+
+function Library:ListIcons()
+	local out = {}
+	for name in pairs(VECTOR_ICONS) do out[#out + 1] = name end
+	table.sort(out)
+	return out
+end
+
 local DEFAULT_CATEGORY_ICONS = {
-	["Main"] = ICONS.puzzle,  ["Combat"]  = ICONS.sword,  ["Player"]  = ICONS.run,
-	["Misc"] = ICONS.box,     ["Settings"]= ICONS.gear,   ["Visuals"] = ICONS.eye,
-	["Config"] = ICONS.layers,["Players"] = ICONS.users,  ["World"]   = ICONS.globe,
-	["Movement"] = ICONS.run, ["Farm"]    = ICONS.refresh,["Teleport"]= ICONS.compass,
+	["Main"] = "puzzle",   ["Combat"]   = "sword",   ["Player"]   = "run",
+	["Misc"] = "box",      ["Settings"] = "settings",["Visuals"]  = "eye",
+	["Config"] = "layers", ["Players"]  = "users",   ["World"]    = "globe",
+	["Movement"] = "run",  ["Farm"]     = "refresh", ["Teleport"] = "compass",
 }
 
 -- element type -> palette icon
 local TYPE_ICONS = {
-	Toggle   = ICONS.toggleon,
-	Slider   = ICONS.sliders,
-	Dropdown = ICONS.list,
-	Button   = ICONS.zap,
-	Keybind  = ICONS.keyboard,
-	Textbox  = ICONS.type,
-	Command  = ICONS.terminal,
+	Toggle   = "toggleon",
+	Slider   = "sliders",
+	Dropdown = "list",
+	Button   = "zap",
+	Keybind  = "keyboard",
+	Textbox  = "type",
+	Color    = "palette",
+	Command  = "terminal",
 }
 
 -- ============================================
@@ -1050,7 +1729,7 @@ end
 local function CreateFloatingPanel(cfg)
 	local name   = cfg.Name or "Panel"
 	local title  = cfg.Title or "Panel"
-	local icon   = cfg.Icon or ICONS.box
+	local icon   = cfg.Icon or "box"
 	local w      = cfg.Width or 260
 	local h      = cfg.Height or 320
 	local pos    = cfg.Position or UDim2.new(0, 30, 0.5, -h / 2)
@@ -1085,11 +1764,10 @@ local function CreateFloatingPanel(cfg)
 		BorderSizePixel = 0, Parent = top
 	})
 
-	Create("ImageLabel", {
-		Image = icon, Size = UDim2.fromOffset(15, 15),
-		Position = UDim2.fromOffset(12, 11), BackgroundTransparency = 1,
-		ImageColor3 = T.accent, ScaleType = Enum.ScaleType.Fit, ZIndex = 3, Parent = top
-	})
+	do
+		local hi = MakeIcon(top, icon, 15, T.accent, 3)
+		if hi then hi.Frame.Position = UDim2.fromOffset(12, 11) end
+	end
 
 	local titleLbl = Create("TextLabel", {
 		Text = title, Font = Enum.Font.GothamBold, TextSize = 13,
@@ -1180,7 +1858,7 @@ local function buildHistoryPanel()
 
 	local panel = CreateFloatingPanel({
 		Name = "2t1Studio_History", Title = "Notifications",
-		Icon = ICONS.bell, Width = 300, Height = 340,
+		Icon = "bell", Width = 300, Height = 340,
 		Position = UDim2.new(1, -330, 0, 60)
 	})
 
@@ -1319,7 +1997,7 @@ local function buildPlayerPanel()
 
 	local panel = CreateFloatingPanel({
 		Name = "2t1Studio_Players", Title = "Players",
-		Icon = ICONS.users, Width = 290, Height = 380,
+		Icon = "users", Width = 290, Height = 380,
 		Position = UDim2.new(0, 30, 0.5, -190)
 	})
 
@@ -1658,7 +2336,7 @@ local function buildIconPanel()
 
 	local panel = CreateFloatingPanel({
 		Name = "2t1Studio_Icons", Title = "Icon Browser",
-		Icon = ICONS.grid, Width = 320, Height = 400,
+		Icon = "grid", Width = 320, Height = 400,
 		Position = UDim2.new(0.5, -160, 0.5, -200)
 	})
 
@@ -1688,12 +2366,7 @@ local function buildIconPanel()
 		scroll.CanvasSize = UDim2.new(0, 0, 0, grid.AbsoluteContentSize.Y + 10)
 	end)
 
-	-- collect lowercase keys only, sorted
-	local names = {}
-	for k in pairs(ICONS) do
-		if k == k:lower() then table.insert(names, k) end
-	end
-	table.sort(names)
+	local names = Library:ListIcons()
 
 	for i, name in ipairs(names) do
 		local cell = Create("TextButton", {
@@ -1706,12 +2379,8 @@ local function buildIconPanel()
 		})
 		local cs = cell:FindFirstChildOfClass("UIStroke")
 
-		local img = Create("ImageLabel", {
-			Image = ICONS[name], Size = UDim2.fromOffset(22, 22),
-			Position = UDim2.new(0.5, -11, 0, 10), BackgroundTransparency = 1,
-			ImageColor3 = Color3.fromRGB(215, 218, 228),
-			ScaleType = Enum.ScaleType.Fit, Parent = cell
-		})
+		local ih = MakeIcon(cell, name, 22, T.textMain, 3)
+		if ih then ih.Frame.Position = UDim2.new(0.5, -11, 0, 10) end
 
 		Create("TextLabel", {
 			Text = name, Font = Enum.Font.GothamMedium, TextSize = 9.5,
@@ -1723,12 +2392,12 @@ local function buildIconPanel()
 		cell.MouseEnter:Connect(function()
 			Tween(cell, 0.14, { BackgroundTransparency = 0.1 })
 			Tween(cs, 0.14, { Color = T.strokeHot, Transparency = 0.2 })
-			Tween(img, 0.14, { ImageColor3 = T.accent })
+			if ih then ih:SetColor(T.accent, 0.14) end
 		end)
 		cell.MouseLeave:Connect(function()
 			Tween(cell, 0.18, { BackgroundTransparency = 0.35 })
 			Tween(cs, 0.18, { Color = T.stroke, Transparency = 0.6 })
-			Tween(img, 0.18, { ImageColor3 = Color3.fromRGB(215, 218, 228) })
+			if ih then ih:SetColor(T.textMain, 0.18) end
 		end)
 		cell.MouseButton1Click:Connect(function()
 			if setclipboard then pcall(setclipboard, name) end
@@ -1757,7 +2426,7 @@ local function buildThemePanel()
 
 	local panel = CreateFloatingPanel({
 		Name = "2t1Studio_Themes", Title = "Palettes",
-		Icon = ICONS.palette, Width = 300, Height = 420,
+		Icon = "palette", Width = 300, Height = 420,
 		Position = UDim2.new(0.5, -150, 0.5, -210)
 	})
 
@@ -1783,16 +2452,17 @@ local function buildThemePanel()
 	end)
 
 	local rows = {}
+	local rowTicks = {}
 
 	local function markActive()
 		local cur = Library:GetTheme()
 		for name, row in pairs(rows) do
 			local on = (name == cur)
 			local st = row:FindFirstChildOfClass("UIStroke")
-			local tick = row:FindFirstChild("Tick")
 			Tween(row, 0.18, { BackgroundTransparency = on and 0.05 or 0.35 })
 			if st then Tween(st, 0.18, { Transparency = on and 0.15 or 0.6 }) end
-			if tick then tick.ImageTransparency = on and 0 or 1 end
+			local tick = rowTicks[name]
+			if tick then tick:SetTransparency(on and 0 or 1) end
 		end
 	end
 
@@ -1842,12 +2512,14 @@ local function buildThemePanel()
 				TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, Parent = row
 			})
 
-			Create("ImageLabel", {
-				Name = "Tick", Image = ICONS.check, Size = UDim2.fromOffset(14, 14),
-				Position = UDim2.new(1, -26, 0, 10), BackgroundTransparency = 1,
-				ImageColor3 = pal.accent, ImageTransparency = 1,
-				ScaleType = Enum.ScaleType.Fit, Parent = row
-			})
+			local tickH = MakeIcon(row, "check", 14, pal.accent, 3)
+			if tickH then
+				tickH.Frame.Name = "Tick"
+				tickH.Frame.Position = UDim2.new(1, -26, 0, 10)
+				tickH:SetTransparency(1)
+			end
+			row:SetAttribute("HasTick", tickH ~= nil)
+			rowTicks[name] = tickH
 
 			row.MouseEnter:Connect(function()
 				if Library:GetTheme() ~= name then
@@ -1910,11 +2582,10 @@ function Library:SetKeybindPanel(on)
 			Create("UICorner", { CornerRadius = UDim.new(0, 9) }),
 			Create("UIStroke", { Color = T.stroke, Thickness = 1, Transparency = 0.35 })
 		})
-		Create("ImageLabel", {
-			Image = ICONS.keyboard, Size = UDim2.fromOffset(12, 12),
-			Position = UDim2.fromOffset(11, 9), BackgroundTransparency = 1,
-			ImageColor3 = T.accent, ScaleType = Enum.ScaleType.Fit, Parent = frame
-		})
+		do
+			local ki = MakeIcon(frame, "keyboard", 12, T.accent, 3)
+			if ki then ki.Frame.Position = UDim2.fromOffset(11, 9) end
+		end
 		Create("TextLabel", {
 			Text = "KEYBINDS", Font = Enum.Font.GothamBold, TextSize = 10.5,
 			TextColor3 = T.accent, BackgroundTransparency = 1,
@@ -1981,13 +2652,13 @@ end
 -- ============================================
 local Palette = {
 	Gui = nil, Main = nil, Input = nil, ResultHolder = nil,
-	Open = false, Results = {}, Index = 1, Rows = {}
+	Open = false, Results = {}, Index = 1, Rows = {}, RowIcons = {}
 }
 
 function Library:RegisterCommand(name, desc, fn, icon)
 	table.insert(Library._commands, {
 		Name = name, Desc = desc or "", Run = fn,
-		Icon = icon or ICONS.Terminal, Kind = "Command"
+		Icon = icon or "terminal", Kind = "Command"
 	})
 end
 
@@ -2019,12 +2690,10 @@ local function buildPalette()
 	local scale = Create("UIScale", { Scale = 0.95, Parent = main })
 
 	-- search row
-	local searchIcon = Create("ImageLabel", {
-		Image = ICONS.search, Size = UDim2.fromOffset(17, 17),
-		Position = UDim2.fromOffset(18, 19), BackgroundTransparency = 1,
-		ImageColor3 = T.textDim, ImageTransparency = 1,
-		ScaleType = Enum.ScaleType.Fit, Parent = main
-	})
+	local searchIconH = MakeIcon(main, "search", 17, T.textDim, 3)
+	local searchIcon = searchIconH and searchIconH.Frame
+	if searchIcon then searchIcon.Position = UDim2.fromOffset(18, 19) end
+	if searchIconH then searchIconH:SetTransparency(1) end
 
 	local input = Create("TextBox", {
 		Text = "", PlaceholderText = "Type a command or search settings...",
@@ -2073,6 +2742,7 @@ local function buildPalette()
 	Palette._scale = scale
 	Palette._stroke = mainStroke
 	Palette._icon = searchIcon
+	Palette._iconH = searchIconH
 	Palette._hint = hintBox
 	Palette._hintLbl = hintLbl
 	Palette._divider = divider
@@ -2091,7 +2761,7 @@ local function paletteCollect()
 	for _, e in ipairs(Library._registry) do
 		if e.frame and e.frame.Parent then
 			table.insert(out, {
-				Name = e.name, Desc = e.path or "", Icon = TYPE_ICONS[e.kind] or ICONS.box,
+				Name = e.name, Desc = e.path or "", Icon = TYPE_ICONS[e.kind] or "box",
 				Kind = e.kind, Run = e.run, Value = e.getValue
 			})
 		end
@@ -2105,6 +2775,7 @@ local function paletteRender(query)
 		if c:IsA("TextButton") or c:IsA("Frame") then c:Destroy() end
 	end
 	Palette.Rows = {}
+	Palette.RowIcons = {}
 
 	local pool = paletteCollect()
 	local scored = {}
@@ -2134,11 +2805,9 @@ local function paletteRender(query)
 			BackgroundTransparency = 1, LayoutOrder = i, Parent = holder
 		}, { Create("UICorner", { CornerRadius = UDim.new(0, 8) }) })
 
-		Create("ImageLabel", {
-			Image = item.Icon, Size = UDim2.fromOffset(15, 15),
-			Position = UDim2.fromOffset(12, 13), BackgroundTransparency = 1,
-			ImageColor3 = T.textDim, ScaleType = Enum.ScaleType.Fit, Parent = row
-		})
+		local rowIcon = MakeIcon(row, item.Icon, 15, T.textDim, 3)
+		if rowIcon then rowIcon.Frame.Position = UDim2.fromOffset(12, 13) end
+		Palette.RowIcons[i] = rowIcon
 
 		Create("TextLabel", {
 			Text = item.Name, Font = Enum.Font.GothamBold, TextSize = 13,
@@ -2202,8 +2871,8 @@ function Palette._highlight()
 		if lbl then
 			Tween(lbl, 0.12, { TextColor3 = on and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(235, 235, 245) })
 		end
-		local img = row:FindFirstChildOfClass("ImageLabel")
-		if img then Tween(img, 0.12, { ImageColor3 = on and T.accent or T.textDim }) end
+		local ic = Palette.RowIcons and Palette.RowIcons[i]
+		if ic then ic:SetColor(on and T.accent or T.textDim, 0.12) end
 	end
 	-- scroll into view
 	local row = Palette.Rows[Palette.Index]
@@ -2241,7 +2910,7 @@ function Library:OpenPalette()
 	Tween(Palette._scale, 0.4, { Scale = 1 }, Enum.EasingStyle.Back)
 	Tween(Palette.Main, 0.25, { BackgroundTransparency = 0.02 })
 	Tween(Palette._stroke, 0.25, { Transparency = 0.25 })
-	Tween(Palette._icon, 0.25, { ImageTransparency = 0 })
+	if Palette._iconH then Palette._iconH:SetTransparency(0) end
 	Tween(Palette.Input, 0.25, { TextTransparency = 0 })
 	Tween(Palette._hint, 0.25, { BackgroundTransparency = 0.3 })
 	Tween(Palette._hintLbl, 0.25, { TextTransparency = 0 })
@@ -2258,7 +2927,7 @@ function Library:ClosePalette()
 	Tween(Palette._scale, 0.22, { Scale = 0.96 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 	Tween(Palette.Main, 0.2, { BackgroundTransparency = 1 })
 	Tween(Palette._stroke, 0.2, { Transparency = 1 })
-	Tween(Palette._icon, 0.2, { ImageTransparency = 1 })
+	if Palette._iconH then Palette._iconH:SetTransparency(1) end
 	Tween(Palette.Input, 0.2, { TextTransparency = 1 })
 	Tween(Palette._hint, 0.2, { BackgroundTransparency = 1 })
 	Tween(Palette._hintLbl, 0.2, { TextTransparency = 1 })
@@ -2994,29 +3663,25 @@ function Library:New(config)
 			Create("UICorner", { CornerRadius = UDim.new(0, 7) }),
 			Create("UIStroke", { Color = T.stroke, Thickness = 1, Transparency = 0.45 })
 		})
-		Create("ImageLabel", {
-			Image = icon, Size = UDim2.fromOffset(13, 13),
-			Position = UDim2.fromOffset(6.5, 6.5), BackgroundTransparency = 1,
-			ImageColor3 = T.textDim, ScaleType = Enum.ScaleType.Fit, ZIndex = 8, Parent = b
-		})
+		local ih = MakeIcon(b, icon, 13, T.textDim, 8)
+		if ih then ih.Frame.Position = UDim2.fromOffset(6.5, 6.5) end
+
 		b.MouseEnter:Connect(function()
 			Tween(b, 0.15, { BackgroundTransparency = 0.05 })
-			local i = b:FindFirstChildOfClass("ImageLabel")
-			if i then Tween(i, 0.15, { ImageColor3 = T.accent }) end
+			if ih then ih:SetColor(T.accent, 0.15) end
 		end)
 		b.MouseLeave:Connect(function()
 			Tween(b, 0.15, { BackgroundTransparency = 0.3 })
-			local i = b:FindFirstChildOfClass("ImageLabel")
-			if i then Tween(i, 0.15, { ImageColor3 = T.textDim }) end
+			if ih then ih:SetColor(T.textDim, 0.15) end
 		end)
 		b.MouseButton1Click:Connect(fn)
 		AttachTooltip(b, tip)
 		return b
 	end
 
-	quickBtn(0,  ICONS.command, "Command Palette  (Ctrl+K)", function() Library:OpenPalette() end)
-	quickBtn(31, ICONS.users,   "Player list",               function() Library:TogglePlayers() end)
-	quickBtn(62, ICONS.bell,    "Notification log",          function() Library:ToggleHistory() end)
+	quickBtn(0,  "command", "Command Palette  (Ctrl+K)", function() Library:OpenPalette() end)
+	quickBtn(31, "users", "Player list",               function() Library:TogglePlayers() end)
+	quickBtn(62, "bell", "Notification log",          function() Library:ToggleHistory() end)
 
 	-- ---------- SEARCH ----------
 	local searchBox = Create("Frame", {
@@ -3029,11 +3694,10 @@ function Library:New(config)
 	})
 	local searchStroke = searchBox:FindFirstChildOfClass("UIStroke")
 
-	Create("ImageLabel", {
-		Image = ICONS.search, Size = UDim2.fromOffset(13, 13),
-		Position = UDim2.fromOffset(8, 6), BackgroundTransparency = 1,
-		ImageColor3 = T.textFade, ScaleType = Enum.ScaleType.Fit, ZIndex = 7, Parent = searchBox
-	})
+	do
+		local sh = MakeIcon(searchBox, "search", 13, T.textFade, 7)
+		if sh then sh.Frame.Position = UDim2.fromOffset(8, 6) end
+	end
 
 	local searchInput = Create("TextBox", {
 		Text = "", PlaceholderText = "Filter...", PlaceholderColor3 = T.textFade,
@@ -3228,31 +3892,25 @@ function Library:New(config)
 
 		-- draws an optional leading icon and shifts the label to make room
 		local function ApplyIcon(bg, ref, label, yOffset)
-			local id = ResolveIcon(ref, nil)
-			if not id then return nil end
-			local img = Create("ImageLabel", {
-				Name = "ElementIcon", Image = id,
-				Size = UDim2.fromOffset(15, 15),
-				Position = UDim2.new(0, 14, 0, yOffset or 0),
-				AnchorPoint = yOffset and Vector2.new(0, 0) or Vector2.new(0, 0),
-				BackgroundTransparency = 1,
-				ImageColor3 = Color3.fromRGB(150, 154, 168),
-				ScaleType = Enum.ScaleType.Fit, ZIndex = 7, Parent = bg
-			})
-			if not yOffset then
-				img.Position = UDim2.new(0, 14, 0.5, -7.5)
+			if ref == nil then return nil end
+			local handle = MakeIcon(bg, ref, 15, T.textDim, 7)
+			if not handle then return nil end
+
+			handle.Frame.Name = "ElementIcon"
+			if yOffset then
+				handle.Frame.Position = UDim2.new(0, 14, 0, yOffset)
+			else
+				handle.Frame.Position = UDim2.new(0, 14, 0.5, -7.5)
 			end
+
 			if label then
 				label.Position = label.Position + UDim2.fromOffset(25, 0)
 				label.Size = label.Size - UDim2.fromOffset(25, 0)
 			end
-			bg.MouseEnter:Connect(function()
-				Tween(img, 0.16, { ImageColor3 = Color3.fromRGB(230, 233, 242) })
-			end)
-			bg.MouseLeave:Connect(function()
-				Tween(img, 0.2, { ImageColor3 = Color3.fromRGB(150, 154, 168) })
-			end)
-			return img
+
+			bg.MouseEnter:Connect(function() handle:SetColor(T.textMain, 0.16) end)
+			bg.MouseLeave:Connect(function() handle:SetColor(T.textDim, 0.2) end)
+			return handle
 		end
 
 		-- ---------- BUTTON ----------
@@ -3361,9 +4019,7 @@ function Library:New(config)
 				Tween(knob, 0.28, { Position = val and UDim2.fromScale(1, 0.5) or UDim2.fromScale(0, 0.5) })
 				Tween(knobStroke, 0.2, { Color = val and T.accent or T.stroke })
 				if elemIcon then
-					Tween(elemIcon, 0.2, {
-						ImageColor3 = val and Color3.fromRGB(245, 247, 252) or Color3.fromRGB(150, 154, 168)
-					})
+					elemIcon:SetColor(val and T.accent or T.textDim, 0.2)
 				end
 			end
 
@@ -3555,22 +4211,20 @@ function Library:New(config)
 				Size = UDim2.new(1, -50, 1, 0), TextXAlignment = Enum.TextXAlignment.Left,
 				TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 7, Parent = header
 			})
-			do
-				local ddIcon = ResolveIcon(cfg.Icon, nil)
+			if cfg.Icon then
+				local ddIcon = MakeIcon(header, cfg.Icon, 15, T.textDim, 8)
 				if ddIcon then
-					Create("ImageLabel", {
-						Name = "ElementIcon", Image = ddIcon, Size = UDim2.fromOffset(15, 15),
-						Position = UDim2.new(0, 14, 0, 13), BackgroundTransparency = 1,
-						ImageColor3 = Color3.fromRGB(150, 154, 168),
-						ScaleType = Enum.ScaleType.Fit, ZIndex = 8, Parent = header
-					})
+					ddIcon.Frame.Name = "ElementIcon"
+					ddIcon.Frame.Position = UDim2.new(0, 14, 0, 13)
 					titleLbl2.Position = UDim2.fromOffset(39, 0)
 					titleLbl2.Size = UDim2.new(1, -75, 1, 0)
+					bg.MouseEnter:Connect(function() ddIcon:SetColor(T.textMain, 0.16) end)
+					bg.MouseLeave:Connect(function() ddIcon:SetColor(T.textDim, 0.2) end)
 				end
 			end
 
 			local arrow = Create("ImageLabel", {
-				Image = ICONS.arrowupdown, Size = UDim2.fromOffset(13, 13),
+				Image = "arrowupdown", Size = UDim2.fromOffset(13, 13),
 				Position = UDim2.new(1, -28, 0.5, -6.5), BackgroundTransparency = 1,
 				ImageColor3 = T.textDim, ScaleType = Enum.ScaleType.Fit, ZIndex = 7, Parent = header
 			})
@@ -3650,7 +4304,7 @@ function Library:New(config)
 					})
 
 					Create("ImageLabel", {
-						Name = "Check", Image = ICONS.check, Size = UDim2.fromOffset(10, 10),
+						Name = "Check", Image = "check", Size = UDim2.fromOffset(10, 10),
 						Position = UDim2.fromOffset(2, 2), BackgroundTransparency = 1,
 						ImageColor3 = Color3.fromRGB(20, 20, 28), ImageTransparency = 1,
 						ScaleType = Enum.ScaleType.Fit, ZIndex = 10, Parent = box
@@ -4388,7 +5042,15 @@ function Library:New(config)
 					local d = sf:FindFirstChild("Dot")
 					local hl = sf:FindFirstChild("TabHighlightBg")
 					if b then Tween(b, 0.2, { TextColor3 = Color3.fromRGB(140, 140, 155) }) end
-					if d then Tween(d, 0.2, { ImageColor3 = Color3.fromRGB(60, 60, 72) }) end
+					if d and d:GetAttribute("IconOwner") == nil then
+						for _, sub in ipairs(d:GetDescendants()) do
+							if sub:IsA("Frame") and sub.BackgroundTransparency < 1 then
+								Tween(sub, 0.2, { BackgroundColor3 = T.stroke })
+							elseif sub:IsA("UIStroke") then
+								Tween(sub, 0.2, { Color = T.stroke })
+							end
+						end
+					end
 					if hl then
 						Tween(hl, 0.2, { BackgroundTransparency = 1 })
 						local s = hl:FindFirstChildOfClass("UIStroke")
@@ -4410,7 +5072,15 @@ function Library:New(config)
 		end
 
 		if tabBtn then Tween(tabBtn, 0.2, { TextColor3 = Color3.fromRGB(255, 255, 255) }) end
-		if tabDot then Tween(tabDot, 0.2, { ImageColor3 = T.accent }) end
+		if tabDot then
+			for _, sub in ipairs(tabDot:GetDescendants()) do
+				if sub:IsA("Frame") and sub.BackgroundTransparency < 1 then
+					Tween(sub, 0.2, { BackgroundColor3 = T.accent })
+				elseif sub:IsA("UIStroke") then
+					Tween(sub, 0.2, { Color = T.accent })
+				end
+			end
+		end
 
 		if subFrame then
 			local hl = subFrame:FindFirstChild("TabHighlightBg")
@@ -4490,11 +5160,8 @@ function Library:New(config)
 			ZIndex = 7, Parent = SC
 		})
 
-		local IL = Create("ImageLabel", {
-			Image = icon, Size = UDim2.fromOffset(15, 15),
-			Position = UDim2.new(0, 14, 0.5, -7.5), BackgroundTransparency = 1,
-			ImageColor3 = T.accent, ScaleType = Enum.ScaleType.Fit, ZIndex = 8, Parent = HB
-		})
+		local IL = MakeIcon(HB, icon, 15, T.accent, 8)
+		if IL then IL.Frame.Position = UDim2.new(0, 14, 0.5, -7.5) end
 
 		local ST = Create("TextLabel", {
 			Text = name, Font = Enum.Font.GothamBold, TextSize = 13.5,
@@ -4503,12 +5170,12 @@ function Library:New(config)
 			TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 8, Parent = HB
 		})
 
-		local SA = Create("ImageLabel", {
-			Image = ICONS.arrowupdown, Size = UDim2.fromOffset(13, 13),
-			Position = UDim2.new(1, -28, 0.5, -6.5), BackgroundTransparency = 1,
-			ImageColor3 = Color3.fromRGB(200, 200, 215), ScaleType = Enum.ScaleType.Fit,
-			ZIndex = 8, Rotation = expanded and 90 or 0, Parent = HB
-		})
+		local SAh = MakeIcon(HB, "chevronup", 13, T.textMain, 8)
+		local SA = SAh and SAh.Frame
+		if SA then
+			SA.Position = UDim2.new(1, -28, 0.5, -6.5)
+			SA.Rotation = expanded and 180 or 0
+		end
 
 		local headerH = 40
 		if desc then
@@ -4546,8 +5213,8 @@ function Library:New(config)
 
 		HB.MouseButton1Click:Connect(function()
 			expanded = not expanded
-			Tween(SA, 0.35, { Rotation = expanded and 90 or 0 })
-			Tween(IL, 0.2, { ImageColor3 = expanded and T.accent or Color3.fromRGB(120, 120, 134) })
+			if SA then Tween(SA, 0.35, { Rotation = expanded and 180 or 0 }) end
+			if IL then IL:SetColor(expanded and T.accent or T.textFade, 0.2) end
 			Tween(ST, 0.2, { TextColor3 = expanded and Color3.fromRGB(238, 238, 248) or Color3.fromRGB(170, 170, 184) })
 			UpdateSize()
 		end)
@@ -4588,15 +5255,15 @@ function Library:New(config)
 			task.spawn(function() task.wait(0.1); UpdateSize() end)
 		else
 			SC.Size = UDim2.new(1, 0, 0, headerH)
-			IL.ImageColor3 = Color3.fromRGB(120, 120, 134)
+			if IL then IL:SetColor(T.textFade) end
 			ST.TextColor3  = Color3.fromRGB(170, 170, 184)
-			SA.Rotation = 0
+			if SA then SA.Rotation = 0 end
 		end
 
 		function Section:SetExpanded(v)
 			if expanded == v then return end
 			expanded = v
-			Tween(SA, 0.35, { Rotation = expanded and 90 or 0 })
+			if SA then Tween(SA, 0.35, { Rotation = expanded and 180 or 0 }) end
 			UpdateSize()
 		end
 		function Section:IsExpanded() return expanded end
@@ -4631,11 +5298,8 @@ function Library:New(config)
 			BackgroundTransparency = 1, Text = "", ZIndex = 7, Parent = CC
 		}, { Create("UICorner", { CornerRadius = UDim.new(0, 7) }) })
 
-		local CI = Create("ImageLabel", {
-			Image = catIcon, Size = UDim2.fromOffset(13, 13),
-			Position = UDim2.fromOffset(9, 9), BackgroundTransparency = 1,
-			ImageColor3 = T.accent, ScaleType = Enum.ScaleType.Fit, ZIndex = 8, Parent = CH
-		})
+		local CIh = MakeIcon(CH, catIcon, 13, T.accent, 8)
+		if CIh then CIh.Frame.Position = UDim2.fromOffset(9, 9) end
 
 		local CT = Create("TextLabel", {
 			Text = catName, Font = Enum.Font.GothamBold, TextSize = 12,
@@ -4644,12 +5308,12 @@ function Library:New(config)
 			TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 8, Parent = CH
 		})
 
-		local CAI = Create("ImageLabel", {
-			Image = ICONS.arrowupdown, Size = UDim2.fromOffset(11, 11),
-			Position = UDim2.new(1, -20, 0.5, -5.5), BackgroundTransparency = 1,
-			ImageColor3 = Color3.fromRGB(170, 170, 185), ScaleType = Enum.ScaleType.Fit,
-			ZIndex = 8, Rotation = expanded and 90 or 0, Parent = CH
-		})
+		local CAIh = MakeIcon(CH, "chevronup", 11, T.textDim, 8)
+		local CAI = CAIh and CAIh.Frame
+		if CAI then
+			CAI.Position = UDim2.new(1, -20, 0.5, -5.5)
+			CAI.Rotation = expanded and 180 or 0
+		end
 
 		local STH = Create("Frame", {
 			Name = "SubTabHolder", Size = UDim2.new(1, 0, 0, 0),
@@ -4674,9 +5338,9 @@ function Library:New(config)
 
 		local function setCatExpanded(v)
 			expanded = v
-			Tween(CAI, 0.35, { Rotation = expanded and 90 or 0 })
+			if CAI then Tween(CAI, 0.35, { Rotation = expanded and 180 or 0 }) end
 			Tween(CT, 0.2, { TextColor3 = expanded and Color3.fromRGB(228, 228, 240) or Color3.fromRGB(150, 150, 166) })
-			Tween(CI, 0.2, { ImageColor3 = expanded and T.accent or Color3.fromRGB(100, 100, 114) })
+			if CIh then CIh:SetColor(expanded and T.accent or T.textFade, 0.2) end
 			UpdateCatSize()
 		end
 
@@ -4704,12 +5368,12 @@ function Library:New(config)
 				Create("UIStroke", { Color = T.accent, Thickness = 1, Transparency = 1 })
 			})
 
-			local Dot = Create("ImageLabel", {
-				Name = "Dot", Image = ICONS.cornerright, Size = UDim2.fromOffset(11, 11),
-				Position = UDim2.fromOffset(6, 8), BackgroundTransparency = 1,
-				ImageColor3 = Color3.fromRGB(60, 60, 72), ScaleType = Enum.ScaleType.Fit,
-				ZIndex = 8, Parent = STF
-			})
+			local DotH = MakeIcon(STF, "cornerright", 11, T.stroke, 8)
+			local Dot = DotH and DotH.Frame
+			if Dot then
+				Dot.Name = "Dot"
+				Dot.Position = UDim2.fromOffset(6, 8)
+			end
 
 			local TB = Create("TextButton", {
 				Text = name, Font = Enum.Font.GothamMedium, TextSize = 12,
@@ -4747,7 +5411,7 @@ function Library:New(config)
 			TB.MouseEnter:Connect(function()
 				if Window._activeTabBtn ~= TB then
 					Tween(TB, 0.15, { TextColor3 = Color3.fromRGB(212, 212, 224) })
-					Tween(Dot, 0.15, { ImageColor3 = Color3.fromRGB(120, 120, 134) })
+					if DotH then DotH:SetColor(T.textFade, 0.15) end
 				end
 			end)
 			TB.MouseLeave:Connect(function()
@@ -4778,9 +5442,9 @@ function Library:New(config)
 			task.spawn(function() task.wait(0.1); UpdateCatSize() end)
 		else
 			CC.Size = UDim2.new(1, 0, 0, 32)
-			CAI.Rotation = 0
+			if CAI then CAI.Rotation = 0 end
 			CT.TextColor3 = Color3.fromRGB(150, 150, 166)
-			CI.ImageColor3 = Color3.fromRGB(100, 100, 114)
+			if CIh then CIh:SetColor(T.textFade) end
 		end
 
 		function Category:SetExpanded(v) setCatExpanded(v) end
@@ -4812,12 +5476,12 @@ function Library:New(config)
 			Create("UIStroke", { Color = T.accent, Thickness = 1, Transparency = 1 })
 		})
 
-		local Dot = Create("ImageLabel", {
-			Name = "Dot", Image = ICONS.cornerright, Size = UDim2.fromOffset(11, 11),
-			Position = UDim2.fromOffset(8, 10), BackgroundTransparency = 1,
-			ImageColor3 = Color3.fromRGB(60, 60, 72), ScaleType = Enum.ScaleType.Fit,
-			ZIndex = 7, Parent = TabBg
-		})
+		local SoloDotH = MakeIcon(TabBg, "cornerright", 11, T.stroke, 7)
+		local Dot = SoloDotH and SoloDotH.Frame
+		if Dot then
+			Dot.Name = "Dot"
+			Dot.Position = UDim2.fromOffset(8, 10)
+		end
 
 		local TabBtn = Create("TextButton", {
 			Text = name, Font = Enum.Font.GothamMedium, TextSize = 12.5,
@@ -4873,7 +5537,7 @@ function Library:New(config)
 				Title = "Config", Type = ok and "success" or "error",
 				Content = ok and "Saved as \"default\"" or "Your executor has no file access", Time = 3
 			})
-		end, ICONS.download)
+		end, "download")
 
 		Library:RegisterCommand("Load Config", "Restore your saved settings", function()
 			local ok, n = Library:LoadConfig("default")
@@ -4881,7 +5545,7 @@ function Library:New(config)
 				Title = "Config", Type = ok and "success" or "error",
 				Content = ok and (n .. " settings restored") or "No saved config found", Time = 3
 			})
-		end, ICONS.layers)
+		end, "layers")
 
 		Library:RegisterCommand("Share Config", "Copy your settings as a shareable code", function()
 			local s = Library:ExportConfig()
@@ -4890,15 +5554,15 @@ function Library:New(config)
 				Content = s and ("Copied to clipboard (" .. #s .. " characters)") or "Could not build the code",
 				Time = 4
 			})
-		end, ICONS.copy)
+		end, "copy")
 
 		Library:RegisterCommand("Toggle Player List", "Show or hide the player panel", function()
 			Library:TogglePlayers()
-		end, ICONS.users)
+		end, "users")
 
 		Library:RegisterCommand("Notification Log", "Open the notification history", function()
 			Library:ToggleHistory()
-		end, ICONS.bell)
+		end, "bell")
 
 		Library:RegisterCommand("Toggle Blur", "Turn the background blur on or off", function()
 			Library.BlurEnabled = not Library.BlurEnabled
@@ -4909,15 +5573,15 @@ function Library:New(config)
 				Title = "Blur", Content = Library.BlurEnabled and "Background blur enabled" or "Background blur disabled",
 				Type = "info", Time = 2
 			})
-		end, ICONS.eye)
+		end, "eye")
 
 		Library:RegisterCommand("Icon Browser", "Preview every built-in icon and copy its name", function()
 			Library:IconBrowser()
-		end, ICONS.grid)
+		end, "grid")
 
 		Library:RegisterCommand("Theme Browser", "Compare every palette and apply one", function()
 			Library:ThemeBrowser()
-		end, ICONS.palette)
+		end, "palette")
 
 		Library:RegisterCommand("Next Theme", "Step to the following palette", function()
 			local list = Library:ListThemes()
@@ -4934,27 +5598,27 @@ function Library:New(config)
 				Content = pal and pal.Note or "Theme applied",
 				Type = "info", Time = 3
 			})
-		end, ICONS.arrowright)
+		end, "arrowright")
 
 		Library:RegisterCommand("Replay Tour", "Play the walkthrough again", function()
 			Library:ResetTour()
 			if Library._tourSteps then Library:StartTour(Library._tourSteps) end
-		end, ICONS.info)
+		end, "info")
 
 		Library:RegisterCommand("Copy Game Link", "Copy this game's URL to your clipboard", function()
 			if setclipboard then
 				pcall(setclipboard, "https://www.roblox.com/games/" .. game.PlaceId)
 				Library:Notify({ Title = "Copied", Content = "Game link copied to clipboard", Type = "success", Time = 2 })
 			end
-		end, ICONS.copy)
+		end, "copy")
 
 		Library:RegisterCommand("Rejoin Server", "Reconnect to the current server", function()
 			game:GetService("TeleportService"):Teleport(game.PlaceId, Player)
-		end, ICONS.home)
+		end, "home")
 
 		Library:RegisterCommand("Unload Interface", "Close everything and clean up", function()
 			Library:Unload()
-		end, ICONS.alert)
+		end, "alert")
 	end
 
 	-- ============================================
