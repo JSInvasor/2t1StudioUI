@@ -1094,6 +1094,15 @@ VECTOR_ICONS.maximize   = VECTOR_ICONS.move
 VECTOR_ICONS.plusone    = VECTOR_ICONS.plus
 
 -- ============================================
+-- ICON PACK
+--
+-- Real Lucide asset ids can be loaded on top of the vector drawings.
+-- Anything the pack does not cover keeps using the drawn version, so a
+-- half-filled pack is perfectly fine.
+-- ============================================
+local ICON_PACK = {}
+
+-- ============================================
 -- ICON FACTORY
 -- Accepts a vector name, a registry name, an asset id, or a raw number.
 -- Returns { Frame, SetColor(colour, duration) }.
@@ -1116,7 +1125,23 @@ local function MakeIcon(parent, ref, size, colour, z)
 		key = ref:lower():gsub("[%s%-_]", "")
 	end
 
-	if key and VECTOR_ICONS[key] then
+	-- a loaded icon pack wins over the built-in vector drawing
+	local packId = key and ICON_PACK[key] or nil
+	if packId then
+		local img = Instance.new("ImageLabel")
+		img.Size = UDim2.fromScale(1, 1)
+		img.BackgroundTransparency = 1
+		img.Image = packId
+		img.ImageColor3 = colour
+		img.ScaleType = Enum.ScaleType.Fit
+		img.ZIndex = (z or 8) + 1
+		img.Parent = container
+		handle.Image = img
+		handle.Source = "pack"
+		handle.Parts[#handle.Parts + 1] = { img, "ImageColor3" }
+
+	elseif key and VECTOR_ICONS[key] then
+		handle.Source = "vector"
 		local s = size / ICON_GRID
 		VECTOR_ICONS[key](container, s)
 
@@ -1147,6 +1172,7 @@ local function MakeIcon(parent, ref, size, colour, z)
 		img.ZIndex = (z or 8) + 1
 		img.Parent = container
 		handle.Image = img
+		handle.Source = "asset"
 		handle.Parts[#handle.Parts + 1] = { img, "ImageColor3" }
 	end
 
@@ -1229,6 +1255,102 @@ Library.VectorIcons  = VECTOR_ICONS
 
 Library.MakeIcon = function(_, parent, ref, size, colour, z)
 	return MakeIcon(parent, ref, size, colour, z)
+end
+
+Library.IconPack = ICON_PACK
+
+-- Accepts { name = 123456, other = "rbxassetid://789" }. nil entries are
+-- skipped so a partly filled pack still works.
+function Library:LoadIconPack(pack)
+	if type(pack) ~= "table" then return false, 0 end
+	local n = 0
+	for name, id in pairs(pack) do
+		if id ~= nil then
+			local url
+			if typeof(id) == "number" then
+				url = "rbxassetid://" .. id
+			elseif typeof(id) == "string" then
+				if id:match("^rbxassetid://%d+$") then
+					url = id
+				elseif id:match("^%d+$") then
+					url = "rbxassetid://" .. id
+				end
+			end
+			if url then
+				ICON_PACK[tostring(name):lower():gsub("[%s%-_]", "")] = url
+				n = n + 1
+			end
+		end
+	end
+	return true, n
+end
+
+function Library:ClearIconPack()
+	for k in pairs(ICON_PACK) do ICON_PACK[k] = nil end
+end
+
+-- Loads every pack image and reports which ids actually resolved. Roblox
+-- gives no direct success flag, so this checks whether the image reports a
+-- non-zero size after preloading.
+function Library:VerifyIcons()
+	local CP = game:GetService("ContentProvider")
+
+	local names, urls = {}, {}
+	for name, url in pairs(ICON_PACK) do
+		names[#names + 1] = name
+		urls[#urls + 1] = url
+	end
+	table.sort(names)
+
+	if #names == 0 then
+		print("[2t1] No icon pack loaded. Everything is using the built-in vector icons.")
+		return { ok = {}, failed = {}, missing = Library:ListIcons() }
+	end
+
+	local probeGui = Instance.new("ScreenGui")
+	probeGui.Name = "2t1_IconProbe"
+	probeGui.Enabled = false
+	probeGui.Parent = getGuiParent()
+
+	local probes = {}
+	for _, name in ipairs(names) do
+		local img = Instance.new("ImageLabel")
+		img.Name = name
+		img.Size = UDim2.fromOffset(1, 1)
+		img.BackgroundTransparency = 1
+		img.Image = ICON_PACK[name]
+		img.Parent = probeGui
+		probes[name] = img
+	end
+
+	pcall(function() CP:PreloadAsync(probeGui:GetChildren()) end)
+
+	local ok, failed = {}, {}
+	for name, img in pairs(probes) do
+		local sz = img.IsLoaded and img.IsLoaded or false
+		if sz then ok[#ok + 1] = name else failed[#failed + 1] = name end
+	end
+	table.sort(ok); table.sort(failed)
+
+	local missing = {}
+	for _, n in ipairs(Library:ListIcons()) do
+		if not ICON_PACK[n] then missing[#missing + 1] = n end
+	end
+
+	print("=== 2t1 icon pack report ===")
+	print(("loaded from pack : %d"):format(#ok))
+	print(("failed to load   : %d"):format(#failed))
+	print(("still vector     : %d"):format(#missing))
+	if #failed > 0 then
+		print("  bad ids: " .. table.concat(failed, ", "))
+	end
+	if #missing > 0 then
+		print("  no id set: " .. table.concat(missing, ", "))
+	end
+	print("============================")
+
+	probeGui:Destroy()
+	return { ok = ok, failed = failed, missing = missing }
 end
 
 function Library:ListIcons()
@@ -2341,7 +2463,7 @@ local function buildIconPanel()
 	})
 
 	local hint = Create("TextLabel", {
-		Text = "Click any icon to copy its name", Font = Enum.Font.GothamMedium,
+		Text = "Click to copy a name. A dot marks icons from your pack.", Font = Enum.Font.GothamMedium,
 		TextSize = 11, TextColor3 = T.textFade, BackgroundTransparency = 1,
 		Position = UDim2.fromOffset(12, 4), Size = UDim2.new(1, -24, 0, 18),
 		TextXAlignment = Enum.TextXAlignment.Left, Parent = panel.Body
@@ -2388,6 +2510,15 @@ local function buildIconPanel()
 			Position = UDim2.fromOffset(2, 38), Size = UDim2.new(1, -4, 0, 20),
 			TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, Parent = cell
 		})
+
+		-- a small mark in the corner when this one comes from a loaded pack
+		if ih and ih.Source == "pack" then
+			Create("Frame", {
+				Size = UDim2.fromOffset(4, 4), Position = UDim2.new(1, -8, 0, 4),
+				BackgroundColor3 = T.accent, BackgroundTransparency = 0.3,
+				BorderSizePixel = 0, ZIndex = 5, Parent = cell
+			}, { Create("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+		end
 
 		cell.MouseEnter:Connect(function()
 			Tween(cell, 0.14, { BackgroundTransparency = 0.1 })
@@ -3487,6 +3618,36 @@ function Library.SettingManager()
 					Title = pal and pal.Label or nextName,
 					Content = pal and pal.Note or "Theme applied",
 					Type = "info", Time = 3
+				})
+			end
+		})
+
+		local icons = tab:Section({ Name = "Icons", Icon = "grid", Default = false })
+
+		icons:Paragraph({
+			Title = "Icon source",
+			Content = "Icons are drawn from UI primitives by default, so they always render. Load a pack of real Lucide asset ids on top and anything the pack covers switches over. Get ids from icons.rest."
+		})
+
+		icons:Button({
+			Name = "Icon Report", Icon = "terminal",
+			Tooltip = "Prints which pack ids loaded, which failed, and which icons are still drawn.",
+			Callback = function() Library:VerifyIcons() end
+		})
+		icons:Button({
+			Name = "Icon Browser", Icon = "grid",
+			Tooltip = "Every icon side by side. A dot marks the ones coming from your pack.",
+			Callback = function() Library:ToggleIconBrowser() end
+		})
+		icons:Button({
+			Name = "Back To Vector", Icon = "refresh",
+			Tooltip = "Drops the loaded pack so everything goes back to the drawn icons.",
+			Callback = function()
+				Library:ClearIconPack()
+				Library:Notify({
+					Title = "Icons",
+					Content = "Pack cleared. Reopen the menu to redraw everything.",
+					Type = "info", Time = 4
 				})
 			end
 		})
@@ -5582,6 +5743,10 @@ function Library:New(config)
 		Library:RegisterCommand("Icon Browser", "Preview every built-in icon and copy its name", function()
 			Library:IconBrowser()
 		end, "grid")
+
+		Library:RegisterCommand("Icon Report", "Check which icon pack ids actually loaded", function()
+			Library:VerifyIcons()
+		end, "terminal")
 
 		Library:RegisterCommand("Theme Browser", "Compare every palette and apply one", function()
 			Library:ThemeBrowser()
