@@ -1235,6 +1235,14 @@ local TYPE_ICONS = {
 local Library = {}
 Library.__index = Library
 
+Library.Version      = "3.4.0"
+Library.Build        = 340          -- bump on every published change
+Library.Features     = {
+	"elements", "sections", "categories", "search", "config", "share",
+	"palette", "playerlist", "history", "tooltips", "tour",
+	"colorpicker", "divider", "inputbutton", "themes", "vectoricons", "iconpack",
+}
+
 Library.ToggleKey    = Enum.KeyCode.RightControl
 Library.Flags        = {}
 Library.FlagSetters  = {}
@@ -1401,6 +1409,20 @@ local function libraryGuis()
 		if g then out[#out + 1] = g end
 	end
 	return out
+end
+
+-- Prints what this copy of the library can do. Handy when a script
+-- errors with "missing method" and you need to know whether the file
+-- being served is the one you think it is.
+function Library:About()
+	print("=== 2t1 Studio UI ===")
+	print("version :", Library.Version)
+	print("build   :", Library.Build)
+	print("themes  :", #Library:ListThemes())
+	print("icons   :", #Library:ListIcons())
+	print("features:", table.concat(Library.Features, ", "))
+	print("=====================")
+	return Library.Version, Library.Build
 end
 
 function Library:GetTheme()
@@ -3236,13 +3258,13 @@ local function tourFocus(targetObj, title, body, stepIdx, total)
 	local x, y = pos.X - pad, pos.Y - pad
 	local w, h = size.X + pad * 2, size.Y + pad * 2
 
-	local T = 0.4
-	Tween(p.top,    T, { Position = UDim2.fromOffset(0, 0),     Size = UDim2.new(1, 0, 0, math.max(y, 0)) })
-	Tween(p.bottom, T, { Position = UDim2.fromOffset(0, y + h), Size = UDim2.new(1, 0, 0, math.max(vp.Y - (y + h), 0)) })
-	Tween(p.left,   T, { Position = UDim2.fromOffset(0, y),     Size = UDim2.fromOffset(math.max(x, 0), h) })
-	Tween(p.right,  T, { Position = UDim2.fromOffset(x + w, y), Size = UDim2.fromOffset(math.max(vp.X - (x + w), 0), h) })
+	local dur = 0.4
+	Tween(p.top,    dur, { Position = UDim2.fromOffset(0, 0),     Size = UDim2.new(1, 0, 0, math.max(y, 0)) })
+	Tween(p.bottom, dur, { Position = UDim2.fromOffset(0, y + h), Size = UDim2.new(1, 0, 0, math.max(vp.Y - (y + h), 0)) })
+	Tween(p.left,   dur, { Position = UDim2.fromOffset(0, y),     Size = UDim2.fromOffset(math.max(x, 0), h) })
+	Tween(p.right,  dur, { Position = UDim2.fromOffset(x + w, y), Size = UDim2.fromOffset(math.max(vp.X - (x + w), 0), h) })
 
-	Tween(Tour._ring, T, { Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, h) })
+	Tween(Tour._ring, dur, { Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, h) })
 
 	-- card placement: below target if room, else above
 	local cardW, cardH = 320, 150
@@ -3254,7 +3276,7 @@ local function tourFocus(targetObj, title, body, stepIdx, total)
 		cy = math.max(y - cardH - 16, 14)
 	end
 
-	Tween(Tour._card, T, { Position = UDim2.fromOffset(cx, cy), Size = UDim2.fromOffset(cardW, cardH) })
+	Tween(Tour._card, dur, { Position = UDim2.fromOffset(cx, cy), Size = UDim2.fromOffset(cardW, cardH) })
 
 	Tour._stepLbl.Text  = stepIdx .. " / " .. total
 	Tour._titleLbl.Text = title
