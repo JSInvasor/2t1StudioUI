@@ -1102,6 +1102,14 @@ VECTOR_ICONS.plusone    = VECTOR_ICONS.plus
 -- ============================================
 local ICON_PACK = {}
 
+-- Two icons from the original library that are kept as real images on
+-- purpose: the header arrow and the sub-tab marker. They read better than
+-- the drawn versions at these small sizes.
+local CHROME_ICONS = {
+	headerArrow = "rbxassetid://10709768538",   -- arrow-up-down
+	tabMarker   = "rbxassetid://10709812485",   -- corner-down-right
+}
+
 -- ============================================
 -- ICON FACTORY
 -- Accepts a vector name, a registry name, an asset id, or a raw number.
@@ -5229,15 +5237,7 @@ function Library:New(config)
 					local d = sf:FindFirstChild("Dot")
 					local hl = sf:FindFirstChild("TabHighlightBg")
 					if b then Tween(b, 0.2, { TextColor3 = Color3.fromRGB(140, 140, 155) }) end
-					if d and d:GetAttribute("IconOwner") == nil then
-						for _, sub in ipairs(d:GetDescendants()) do
-							if sub:IsA("Frame") and sub.BackgroundTransparency < 1 then
-								Tween(sub, 0.2, { BackgroundColor3 = T.stroke })
-							elseif sub:IsA("UIStroke") then
-								Tween(sub, 0.2, { Color = T.stroke })
-							end
-						end
-					end
+					if d then Tween(d, 0.2, { ImageColor3 = T.stroke }) end
 					if hl then
 						Tween(hl, 0.2, { BackgroundTransparency = 1 })
 						local s = hl:FindFirstChildOfClass("UIStroke")
@@ -5259,15 +5259,7 @@ function Library:New(config)
 		end
 
 		if tabBtn then Tween(tabBtn, 0.2, { TextColor3 = Color3.fromRGB(255, 255, 255) }) end
-		if tabDot then
-			for _, sub in ipairs(tabDot:GetDescendants()) do
-				if sub:IsA("Frame") and sub.BackgroundTransparency < 1 then
-					Tween(sub, 0.2, { BackgroundColor3 = T.accent })
-				elseif sub:IsA("UIStroke") then
-					Tween(sub, 0.2, { Color = T.accent })
-				end
-			end
-		end
+		if tabDot then Tween(tabDot, 0.2, { ImageColor3 = T.accent }) end
 
 		if subFrame then
 			local hl = subFrame:FindFirstChild("TabHighlightBg")
@@ -5357,12 +5349,12 @@ function Library:New(config)
 			TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 8, Parent = HB
 		})
 
-		local SAh = MakeIcon(HB, "chevronup", 13, T.textMain, 8)
-		local SA = SAh and SAh.Frame
-		if SA then
-			SA.Position = UDim2.new(1, -28, 0.5, -6.5)
-			SA.Rotation = expanded and 180 or 0
-		end
+		local SA = Create("ImageLabel", {
+			Image = CHROME_ICONS.headerArrow, Size = UDim2.fromOffset(13, 13),
+			Position = UDim2.new(1, -28, 0.5, -6.5), BackgroundTransparency = 1,
+			ImageColor3 = T.textMain, ScaleType = Enum.ScaleType.Fit,
+			ZIndex = 8, Rotation = expanded and 90 or 0, Parent = HB
+		})
 
 		local headerH = 40
 		if desc then
@@ -5400,7 +5392,7 @@ function Library:New(config)
 
 		HB.MouseButton1Click:Connect(function()
 			expanded = not expanded
-			if SA then Tween(SA, 0.35, { Rotation = expanded and 180 or 0 }) end
+			Tween(SA, 0.35, { Rotation = expanded and 90 or 0 })
 			if IL then IL:SetColor(expanded and T.accent or T.textFade, 0.2) end
 			Tween(ST, 0.2, { TextColor3 = expanded and Color3.fromRGB(238, 238, 248) or Color3.fromRGB(170, 170, 184) })
 			UpdateSize()
@@ -5424,7 +5416,7 @@ function Library:New(config)
 		local sectionExpand = function()
 			if not expanded then
 				expanded = true
-				if SA then Tween(SA, 0.35, { Rotation = 180 }) end
+				Tween(SA, 0.35, { Rotation = 90 })
 				UpdateSize()
 			end
 		end
@@ -5444,13 +5436,13 @@ function Library:New(config)
 			SC.Size = UDim2.new(1, 0, 0, headerH)
 			if IL then IL:SetColor(T.textFade) end
 			ST.TextColor3  = Color3.fromRGB(170, 170, 184)
-			if SA then SA.Rotation = 0 end
+			SA.Rotation = 0
 		end
 
 		function Section:SetExpanded(v)
 			if expanded == v then return end
 			expanded = v
-			if SA then Tween(SA, 0.35, { Rotation = expanded and 180 or 0 }) end
+			Tween(SA, 0.35, { Rotation = expanded and 90 or 0 })
 			UpdateSize()
 		end
 		function Section:IsExpanded() return expanded end
@@ -5495,12 +5487,12 @@ function Library:New(config)
 			TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 8, Parent = CH
 		})
 
-		local CAIh = MakeIcon(CH, "chevronup", 11, T.textDim, 8)
-		local CAI = CAIh and CAIh.Frame
-		if CAI then
-			CAI.Position = UDim2.new(1, -20, 0.5, -5.5)
-			CAI.Rotation = expanded and 180 or 0
-		end
+		local CAI = Create("ImageLabel", {
+			Image = CHROME_ICONS.headerArrow, Size = UDim2.fromOffset(11, 11),
+			Position = UDim2.new(1, -20, 0.5, -5.5), BackgroundTransparency = 1,
+			ImageColor3 = T.textDim, ScaleType = Enum.ScaleType.Fit,
+			ZIndex = 8, Rotation = expanded and 90 or 0, Parent = CH
+		})
 
 		local STH = Create("Frame", {
 			Name = "SubTabHolder", Size = UDim2.new(1, 0, 0, 0),
@@ -5525,16 +5517,22 @@ function Library:New(config)
 
 		local function setCatExpanded(v)
 			expanded = v
-			if CAI then Tween(CAI, 0.35, { Rotation = expanded and 180 or 0 }) end
+			Tween(CAI, 0.35, { Rotation = expanded and 90 or 0 })
 			Tween(CT, 0.2, { TextColor3 = expanded and Color3.fromRGB(228, 228, 240) or Color3.fromRGB(150, 150, 166) })
 			if CIh then CIh:SetColor(expanded and T.accent or T.textFade, 0.2) end
 			UpdateCatSize()
 		end
 
 		CH.MouseButton1Click:Connect(function() setCatExpanded(not expanded) end)
-		CH.MouseEnter:Connect(function() Tween(CT, 0.15, { TextColor3 = Color3.fromRGB(255, 255, 255) }) end)
+		CH.MouseEnter:Connect(function()
+			Tween(CT, 0.15, { TextColor3 = Color3.fromRGB(255, 255, 255) })
+			Tween(CAI, 0.15, { ImageColor3 = T.textMain })
+		end)
 		CH.MouseLeave:Connect(function()
-			Tween(CT, 0.15, { TextColor3 = expanded and Color3.fromRGB(228, 228, 240) or Color3.fromRGB(150, 150, 166) })
+			Tween(CT, 0.15, {
+				TextColor3 = expanded and Color3.fromRGB(228, 228, 240) or Color3.fromRGB(150, 150, 166)
+			})
+			Tween(CAI, 0.15, { ImageColor3 = T.textDim })
 		end)
 
 		function Category:NewTab(name, tabCfg)
@@ -5555,12 +5553,12 @@ function Library:New(config)
 				Create("UIStroke", { Color = T.accent, Thickness = 1, Transparency = 1 })
 			})
 
-			local DotH = MakeIcon(STF, "cornerright", 11, T.stroke, 8)
-			local Dot = DotH and DotH.Frame
-			if Dot then
-				Dot.Name = "Dot"
-				Dot.Position = UDim2.fromOffset(6, 8)
-			end
+			local Dot = Create("ImageLabel", {
+				Name = "Dot", Image = CHROME_ICONS.tabMarker,
+				Size = UDim2.fromOffset(11, 11), Position = UDim2.fromOffset(6, 8),
+				BackgroundTransparency = 1, ImageColor3 = T.stroke,
+				ScaleType = Enum.ScaleType.Fit, ZIndex = 8, Parent = STF
+			})
 
 			local TB = Create("TextButton", {
 				Text = name, Font = Enum.Font.GothamMedium, TextSize = 12,
@@ -5595,18 +5593,37 @@ function Library:New(config)
 			end
 
 			TB.MouseButton1Click:Connect(doSelect)
+			-- hover never touches the selected tab, and leaving always puts
+			-- the colours back to whichever state the tab is actually in
+			local function paintIdle()
+				Tween(TB, 0.15, { TextColor3 = Color3.fromRGB(140, 140, 155) })
+				Tween(Dot, 0.15, { ImageColor3 = T.stroke })
+			end
+			local function paintHover()
+				Tween(TB, 0.15, { TextColor3 = Color3.fromRGB(212, 212, 224) })
+				Tween(Dot, 0.15, { ImageColor3 = T.textFade })
+			end
+			local function paintActive()
+				Tween(TB, 0.15, { TextColor3 = Color3.fromRGB(255, 255, 255) })
+				Tween(Dot, 0.15, { ImageColor3 = T.accent })
+			end
+
 			TB.MouseEnter:Connect(function()
-				if Window._activeTabBtn ~= TB then
-					Tween(TB, 0.15, { TextColor3 = Color3.fromRGB(212, 212, 224) })
-					if DotH then DotH:SetColor(T.textFade, 0.15) end
-				end
+				if Window._activeTabBtn == TB then return end
+				paintHover()
 			end)
 			TB.MouseLeave:Connect(function()
-				if Window._activeTabBtn ~= TB then
-					Tween(TB, 0.15, { TextColor3 = Color3.fromRGB(140, 140, 155) })
-					if DotH then DotH:SetColor(T.stroke, 0.15) end
+				if Window._activeTabBtn == TB then
+					paintActive()
+				else
+					paintIdle()
 				end
 			end)
+
+			-- the first tab built becomes the fallback selection on boot
+			if not Window._firstTabSelect then
+				Window._firstTabSelect = doSelect
+			end
 
 			local ctx = { category = catName, tab = name, selectTab = doSelect }
 
@@ -5629,7 +5646,7 @@ function Library:New(config)
 			task.spawn(function() task.wait(0.1); UpdateCatSize() end)
 		else
 			CC.Size = UDim2.new(1, 0, 0, 32)
-			if CAI then CAI.Rotation = 0 end
+			CAI.Rotation = 0
 			CT.TextColor3 = Color3.fromRGB(150, 150, 166)
 			if CIh then CIh:SetColor(T.textFade) end
 		end
@@ -5663,12 +5680,12 @@ function Library:New(config)
 			Create("UIStroke", { Color = T.accent, Thickness = 1, Transparency = 1 })
 		})
 
-		local SoloDotH = MakeIcon(TabBg, "cornerright", 11, T.stroke, 7)
-		local Dot = SoloDotH and SoloDotH.Frame
-		if Dot then
-			Dot.Name = "Dot"
-			Dot.Position = UDim2.fromOffset(8, 10)
-		end
+		local Dot = Create("ImageLabel", {
+			Name = "Dot", Image = CHROME_ICONS.tabMarker,
+			Size = UDim2.fromOffset(11, 11), Position = UDim2.fromOffset(8, 10),
+			BackgroundTransparency = 1, ImageColor3 = T.stroke,
+			ScaleType = Enum.ScaleType.Fit, ZIndex = 7, Parent = TabBg
+		})
 
 		local TabBtn = Create("TextButton", {
 			Text = name, Font = Enum.Font.GothamMedium, TextSize = 12.5,
@@ -5699,6 +5716,10 @@ function Library:New(config)
 
 		local function doSelect() SelectTab(TabBtn, Dot, Page, TabBg) end
 		TabBtn.MouseButton1Click:Connect(doSelect)
+
+		if not self._firstTabSelect then
+			self._firstTabSelect = doSelect
+		end
 
 		local ctx = { category = nil, tab = name, selectTab = doSelect }
 		CreateElementMethods(Tab, Page, UCS, ctx)
@@ -5892,6 +5913,13 @@ function Library:New(config)
 					if i then Tween(i, 0.3, { ImageTransparency = 0 }) end
 				end)
 			end
+		end
+
+		-- Nothing is selected until the calling script picks a tab, and an
+		-- unselected sidebar leaves hover colours with no state to return
+		-- to. Fall back to the first tab that was built.
+		if not self._activeTabBtn and self._firstTabSelect then
+			pcall(self._firstTabSelect)
 		end
 
 		-- first-run tour
