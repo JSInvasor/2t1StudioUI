@@ -2703,10 +2703,19 @@ do
 		win._floatSize = main.Size
 		win._snapped   = nil
 
-		local dragging, grabDelta, armedZone
+		local dragging, armedZone
+		local dragStart, startOff, curOff          -- everything below is pure offset space
 		local lastP, lastT, vel = nil, 0, Vector2.zero
 
-		local function clampCenter(cx, cy, w, h)
+		-- Position may be scale based; resolve it to the equivalent offset so the drag
+		-- is a plain delta and the window never jumps under the cursor.
+		local function centreOffset()
+			local V = viewport(gui)
+			local p = main.Position
+			return Vector2.new(p.X.Scale * V.X + p.X.Offset, p.Y.Scale * V.Y + p.Y.Offset)
+		end
+
+		local function clampCentre(cx, cy, w, h)
 			local V = viewport(gui)
 			local halfW, halfH = w / 2, h / 2
 			return math.clamp(cx, halfW + GAP, math.max(V.X - halfW - GAP, halfW + GAP)),
@@ -2758,14 +2767,20 @@ do
 			dragging = true
 			lastP, lastT, vel = input.Position, os.clock(), Vector2.zero
 
-			local x, y, w, h = rectOf(main)
-			grabDelta = Vector2.new(input.Position.X - (x + w / 2), input.Position.Y - (y + h / 2))
+			-- stop any running spring, then pin the window to where it visually is.
+			-- from here the drag is start position + cursor delta, nothing absolute,
+			-- so the window stays exactly where you grabbed it.
+			Motion.stop(main, "Position")
+			curOff    = centreOffset()
+			startOff  = curOff
+			dragStart = Vector2.new(input.Position.X, input.Position.Y)
+			Motion.set(main, { Position = UDim2.fromOffset(curOff.X, curOff.Y) })
 
 			-- if it was snapped, remember where along the title bar we grabbed it
 			if win._snapped then
+				local x, y, w = rectOf(main)
 				local grip = (input.Position.X - x) / math.max(w, 1)
-				local fw = win._floatSize.X.Offset
-				win._pendingUnsnap = { grip = grip, floatW = fw }
+				win._pendingUnsnap = { grip = grip, floatW = win._floatSize.X.Offset }
 			end
 
 			input.Changed:Connect(function()
@@ -2780,11 +2795,11 @@ do
 					end
 
 					-- throw: predict where the momentum wants to land, then clamp
-					local x2, y2, w2, h2 = rectOf(main)
-					local cx, cy = x2 + w2 / 2, y2 + h2 / 2
+					local c = curOff or centreOffset()
+					local _, _, w2, h2 = rectOf(main)
 					local vx = math.clamp(vel.X, -2600, 2600)
 					local vy = math.clamp(vel.Y, -2600, 2600)
-					local tx, ty = clampCenter(cx + vx * 0.11, cy + vy * 0.11, w2, h2)
+					local tx, ty = clampCentre(c.X + vx * 0.11, c.Y + vy * 0.11, w2, h2)
 
 					Motion.to(main, { Position = UDim2.fromOffset(tx, ty) }, {
 						Preset = "smooth", Velocity = UDim2.fromOffset(vx, vy)
@@ -2807,18 +2822,26 @@ do
 				lastP, lastT = p, now
 			end
 
-			-- peeling a snapped window off the edge restores its floating size
+			-- peeling a snapped window off the edge restores its floating size.
+			-- rebaseline the drag so the cursor keeps the same grip along the title
+			-- bar and the top edge does not slide out from under it.
 			if win._pendingUnsnap then
 				local u = win._pendingUnsnap
 				win._pendingUnsnap = nil
 				win._snapped = nil
+
+				local _, _, _, h = rectOf(main)
+				local floatH = win._floatSize.Y.Offset
 				Motion.to(main, { Size = win._floatSize }, "stiff")
-				grabDelta = Vector2.new((u.grip - 0.5) * u.floatW, grabDelta.Y)
+
+				startOff  = Vector2.new(p.X - (u.grip - 0.5) * u.floatW,
+				                        (curOff.Y - h / 2) + floatH / 2)
+				dragStart = Vector2.new(p.X, p.Y)
 			end
 
-			Motion.set(main, {
-				Position = UDim2.fromOffset(p.X - grabDelta.X, p.Y - grabDelta.Y)
-			})
+			curOff = Vector2.new(startOff.X + (p.X - dragStart.X),
+			                     startOff.Y + (p.Y - dragStart.Y))
+			Motion.set(main, { Position = UDim2.fromOffset(curOff.X, curOff.Y) })
 
 			local z = Library.Snapping ~= false and zoneAt(gui, p.X, p.Y) or nil
 			if (z and z.key) ~= (armedZone and armedZone.key) then
