@@ -347,6 +347,161 @@ local YELLOW      = Color3.fromRGB(250, 200, 80)
 local BLUE        = Color3.fromRGB(90, 160, 255)
 
 -- ============================================
+-- THEME PRESETS
+-- The names above are plain file-level locals, so every closure in this file
+-- reads the same upvalue. Assigning to them in SetTheme rewrites the palette for
+-- anything built from then on, and the repaint pass below recolours what is
+-- already on screen. GREEN / RED / YELLOW / BLUE stay fixed: they carry meaning.
+-- Every preset is dark on purpose so the hardcoded neutral greys still sit well.
+-- ============================================
+local THEMES = {
+	{ Name = "Monochrome",
+	  Accent = Color3.fromRGB(255, 255, 255),
+	  Main = Color3.fromRGB(15, 15, 20),   Panel   = Color3.fromRGB(18, 18, 25),
+	  Element = Color3.fromRGB(22, 22, 30), Hover   = Color3.fromRGB(28, 28, 38),
+	  Stroke = Color3.fromRGB(55, 55, 65), StrokeHot = Color3.fromRGB(110, 110, 125),
+	  Text = Color3.fromRGB(210, 210, 220), Dim = Color3.fromRGB(140, 140, 150),
+	  Fade = Color3.fromRGB(100, 100, 112) },
+
+	{ Name = "Midnight",
+	  Accent = Color3.fromRGB(86, 140, 255),
+	  Main = Color3.fromRGB(12, 14, 22),   Panel   = Color3.fromRGB(16, 19, 29),
+	  Element = Color3.fromRGB(21, 25, 37), Hover   = Color3.fromRGB(28, 33, 48),
+	  Stroke = Color3.fromRGB(46, 54, 76), StrokeHot = Color3.fromRGB(92, 108, 148),
+	  Text = Color3.fromRGB(214, 220, 235), Dim = Color3.fromRGB(138, 148, 172),
+	  Fade = Color3.fromRGB(96, 105, 128) },
+
+	{ Name = "Ember",
+	  Accent = Color3.fromRGB(255, 146, 58),
+	  Main = Color3.fromRGB(20, 15, 13),   Panel   = Color3.fromRGB(26, 19, 16),
+	  Element = Color3.fromRGB(33, 24, 20), Hover   = Color3.fromRGB(43, 32, 26),
+	  Stroke = Color3.fromRGB(70, 52, 42), StrokeHot = Color3.fromRGB(128, 94, 72),
+	  Text = Color3.fromRGB(232, 220, 210), Dim = Color3.fromRGB(160, 144, 132),
+	  Fade = Color3.fromRGB(116, 102, 92) },
+
+	{ Name = "Aurora",
+	  Accent = Color3.fromRGB(72, 235, 196),
+	  Main = Color3.fromRGB(10, 18, 19),   Panel   = Color3.fromRGB(14, 24, 26),
+	  Element = Color3.fromRGB(19, 31, 34), Hover   = Color3.fromRGB(26, 42, 45),
+	  Stroke = Color3.fromRGB(44, 72, 74), StrokeHot = Color3.fromRGB(86, 134, 134),
+	  Text = Color3.fromRGB(208, 228, 226), Dim = Color3.fromRGB(134, 158, 158),
+	  Fade = Color3.fromRGB(94, 118, 118) },
+
+	{ Name = "Sakura",
+	  Accent = Color3.fromRGB(255, 122, 168),
+	  Main = Color3.fromRGB(21, 13, 19),   Panel   = Color3.fromRGB(27, 17, 25),
+	  Element = Color3.fromRGB(34, 22, 32), Hover   = Color3.fromRGB(45, 29, 42),
+	  Stroke = Color3.fromRGB(74, 48, 68), StrokeHot = Color3.fromRGB(132, 88, 120),
+	  Text = Color3.fromRGB(236, 216, 228), Dim = Color3.fromRGB(166, 138, 156),
+	  Fade = Color3.fromRGB(120, 98, 112) },
+
+	{ Name = "Royal",
+	  Accent = Color3.fromRGB(167, 124, 255),
+	  Main = Color3.fromRGB(14, 12, 24),   Panel   = Color3.fromRGB(19, 16, 32),
+	  Element = Color3.fromRGB(25, 21, 41), Hover   = Color3.fromRGB(34, 28, 54),
+	  Stroke = Color3.fromRGB(56, 48, 86), StrokeHot = Color3.fromRGB(104, 90, 150),
+	  Text = Color3.fromRGB(220, 214, 240), Dim = Color3.fromRGB(148, 140, 178),
+	  Fade = Color3.fromRGB(106, 100, 134) },
+
+	{ Name = "Emerald",
+	  Accent = Color3.fromRGB(64, 214, 124),
+	  Main = Color3.fromRGB(11, 18, 14),   Panel   = Color3.fromRGB(15, 24, 19),
+	  Element = Color3.fromRGB(20, 32, 25), Hover   = Color3.fromRGB(27, 43, 33),
+	  Stroke = Color3.fromRGB(46, 74, 56), StrokeHot = Color3.fromRGB(88, 136, 102),
+	  Text = Color3.fromRGB(212, 230, 218), Dim = Color3.fromRGB(138, 162, 146),
+	  Fade = Color3.fromRGB(98, 120, 106) },
+
+	{ Name = "Champagne",
+	  Accent = Color3.fromRGB(226, 192, 124),
+	  Main = Color3.fromRGB(18, 16, 13),   Panel   = Color3.fromRGB(24, 21, 17),
+	  Element = Color3.fromRGB(31, 27, 22), Hover   = Color3.fromRGB(41, 36, 29),
+	  Stroke = Color3.fromRGB(70, 62, 48), StrokeHot = Color3.fromRGB(126, 112, 86),
+	  Text = Color3.fromRGB(233, 226, 212), Dim = Color3.fromRGB(164, 155, 138),
+	  Fade = Color3.fromRGB(118, 111, 98) },
+
+	{ Name = "Ice",
+	  Accent = Color3.fromRGB(120, 200, 255),
+	  Main = Color3.fromRGB(12, 16, 21),   Panel   = Color3.fromRGB(16, 21, 28),
+	  Element = Color3.fromRGB(21, 28, 37), Hover   = Color3.fromRGB(29, 38, 50),
+	  Stroke = Color3.fromRGB(48, 62, 80), StrokeHot = Color3.fromRGB(92, 118, 148),
+	  Text = Color3.fromRGB(214, 226, 238), Dim = Color3.fromRGB(140, 156, 174),
+	  Fade = Color3.fromRGB(100, 114, 130) },
+
+	{ Name = "Vanta",
+	  Accent = Color3.fromRGB(235, 235, 240),
+	  Main = Color3.fromRGB(0, 0, 0),      Panel   = Color3.fromRGB(7, 7, 9),
+	  Element = Color3.fromRGB(12, 12, 15), Hover   = Color3.fromRGB(19, 19, 23),
+	  Stroke = Color3.fromRGB(38, 38, 44), StrokeHot = Color3.fromRGB(86, 86, 96),
+	  Text = Color3.fromRGB(226, 226, 232), Dim = Color3.fromRGB(146, 146, 156),
+	  Fade = Color3.fromRGB(100, 100, 110) },
+}
+
+local THEME_ORDER, THEME_BY_NAME = {}, {}
+for i, t in ipairs(THEMES) do
+	THEME_ORDER[i] = t.Name
+	THEME_BY_NAME[t.Name] = t
+end
+
+-- Color3 is userdata, so it cannot be used as a table key by value. Round to the
+-- byte the colour was authored at and key on that instead.
+local function colourKey(c)
+	return math.floor(c.R * 255 + 0.5) .. "," ..
+	       math.floor(c.G * 255 + 0.5) .. "," ..
+	       math.floor(c.B * 255 + 0.5)
+end
+
+local COLOUR_PROPS = {
+	Frame          = { "BackgroundColor3" },
+	TextLabel      = { "BackgroundColor3", "TextColor3" },
+	TextButton     = { "BackgroundColor3", "TextColor3" },
+	TextBox        = { "BackgroundColor3", "TextColor3", "PlaceholderColor3" },
+	ImageLabel     = { "BackgroundColor3", "ImageColor3" },
+	ImageButton    = { "BackgroundColor3", "ImageColor3" },
+	ScrollingFrame = { "BackgroundColor3", "ScrollBarImageColor3" },
+	UIStroke       = { "Color" },
+}
+
+-- Repaint everything already on screen. `map` is oldColourKey -> new Color3.
+local function repaintTheme(map, fade)
+	local roots = { getGuiParent(), Player:FindFirstChild("PlayerGui") }
+	for _, parent in pairs(roots) do
+		if parent then
+			for _, g in ipairs(parent:GetChildren()) do
+				if g:IsA("ScreenGui") and g.Name:sub(1, 10) == "2t1Studio_" then
+					for _, d in ipairs(g:GetDescendants()) do
+						if d:IsA("UIGradient") then
+							local keys, changed = {}, false
+							for _, k in ipairs(d.Color.Keypoints) do
+								local hit = map[colourKey(k.Value)]
+								if hit then changed = true end
+								keys[#keys + 1] = ColorSequenceKeypoint.new(k.Time, hit or k.Value)
+							end
+							if changed then d.Color = ColorSequence.new(keys) end
+						else
+							for class, props in pairs(COLOUR_PROPS) do
+								if d:IsA(class) then
+									for _, prop in ipairs(props) do
+										local hit = map[colourKey(d[prop])]
+										if hit then
+											if fade then
+												Tween(d, 0.28, { [prop] = hit })
+											else
+												d[prop] = hit
+											end
+										end
+									end
+									break
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+-- ============================================
 -- ICON REGISTRY
 -- Reference by name ("sword") or pass a raw id.
 -- Library:IconBrowser() shows every icon in a grid.
@@ -523,8 +678,52 @@ Library._windows     = {}
 Library._notifLog    = {}
 Library._commands    = {}
 Library._registry    = {}    -- searchable elements for palette
+Library.Theme        = THEME_ORDER[1]
+Library.AccentColor  = ACCENT
+Library.CustomAccent = nil   -- set by the accent picker, overrides the preset
 Library.Icons        = ICONS
 Library.Icon         = function(_, ref) return ResolveIcon(ref, DEFAULT_SECTION_ICON) end
+
+-- Names for the theme dropdown, in the order they were authored.
+function Library:ThemeList()
+	return table.clone(THEME_ORDER)
+end
+
+-- Swap the palette. `accent` is optional and wins over the preset's own accent.
+-- Rewrites the file-level colour locals first so anything built afterwards is
+-- already correct, then repaints every live element by matching its old colour.
+function Library:SetTheme(name, accent, instant)
+	local t = THEME_BY_NAME[name] or THEME_BY_NAME[THEME_ORDER[1]]
+	accent = accent or t.Accent
+
+	local map = {}
+	local function bind(oldC, newC)
+		if oldC ~= newC then map[colourKey(oldC)] = newC end
+	end
+	bind(ACCENT, accent)
+	bind(BG_MAIN, t.Main)      bind(BG_PANEL, t.Panel)
+	bind(BG_ELEMENT, t.Element) bind(BG_HOVER, t.Hover)
+	bind(STROKE, t.Stroke)     bind(STROKE_HOT, t.StrokeHot)
+	bind(TXT_MAIN, t.Text)     bind(TXT_DIM, t.Dim)
+	bind(TXT_FADE, t.Fade)
+
+	ACCENT     = accent
+	BG_MAIN    = t.Main
+	BG_PANEL   = t.Panel
+	BG_ELEMENT = t.Element
+	BG_HOVER   = t.Hover
+	STROKE     = t.Stroke
+	STROKE_HOT = t.StrokeHot
+	TXT_MAIN   = t.Text
+	TXT_DIM    = t.Dim
+	TXT_FADE   = t.Fade
+
+	Library.Theme       = t.Name
+	Library.AccentColor = accent
+
+	if next(map) then repaintTheme(map, not instant) end
+	return t.Name
+end
 
 -- Merge an external icon pack (see module2.lua) over the built-in set.
 -- Entries left as nil are skipped so the built-in vector icon stays as fallback.
@@ -2485,6 +2684,46 @@ end
 function Library.SettingManager()
 	local Manager = {}
 	function Manager:AddToTab(tab)
+		local look = tab:Section({ Name = "Appearance", Icon = "palette", Default = true })
+
+		look:Dropdown({
+			Name = "Theme", Icon = "palette", Flag = "ui_theme",
+			List = Library:ThemeList(), Default = Library.Theme,
+			Tooltip = "Ten hand-tuned dark palettes. Everything on screen repaints live.",
+			Callback = function(v)
+				if typeof(v) ~= "string" then return end
+				Library:SetTheme(v, Library.CustomAccent)
+			end
+		})
+		-- the picker fires continuously while you drag it, so coalesce the repaints
+		-- and apply them without tweens; a full tweened repass per frame would stall
+		local accentQueued, accentPending
+		look:ColorPicker({
+			Name = "Accent Colour", Icon = "sparkles", Flag = "ui_accent",
+			Default = Library.AccentColor,
+			Tooltip = "Force your own accent on top of the chosen theme.",
+			Callback = function(c)
+				Library.CustomAccent = c
+				accentPending = c
+				if accentQueued then return end
+				accentQueued = true
+				task.delay(0.1, function()
+					accentQueued = false
+					Library:SetTheme(Library.Theme, accentPending, true)
+				end)
+			end
+		})
+		look:Button({
+			Name = "Reset Accent", Icon = "refresh",
+			Tooltip = "Go back to the accent the theme was designed with.",
+			Callback = function()
+				Library.CustomAccent = nil
+				Library:SetTheme(Library.Theme, nil)
+				Library:Notify({ Title = "Accent reset", Type = "info", Time = 2,
+					Content = "Back to the " .. Library.Theme .. " accent." })
+			end
+		})
+
 		local ui = tab:Section({ Name = "Interface", Icon = "settings", Default = true })
 
 		ui:Keybind({
@@ -2545,6 +2784,58 @@ function Library.SettingManager()
 			Tooltip = "Preview every built-in icon and click one to copy its name.",
 			Callback = function() Library:ToggleIconBrowser() end
 		})
+		-- Configs. The theme dropdown and accent picker carry flags, so a saved
+		-- config restores the look as well as the settings.
+		local cfgSec = tab:Section({ Name = "Configs", Icon = "save", Default = false })
+
+		local cfgName = "default"
+		local function notify(title, content, kind)
+			Library:Notify({ Title = title, Content = content, Type = kind or "info", Time = 3 })
+		end
+
+		cfgSec:Textbox({
+			Name = "Config Name", Placeholder = "default", Default = "default",
+			Tooltip = "Which file the buttons below read and write.",
+			Callback = function(v)
+				v = tostring(v or ""):gsub("[^%w_%- ]", "")
+				cfgName = (v ~= "" and v) or "default"
+			end
+		})
+		cfgSec:Button({
+			Name = "Save Config", Icon = "save",
+			Tooltip = "Writes every flag, including the theme, to that file.",
+			Callback = function()
+				local ok, err = Library:SaveConfig(cfgName)
+				if ok then notify("Config saved", cfgName .. ".json", "success")
+				else notify("Could not save", tostring(err), "error") end
+			end
+		})
+		cfgSec:Button({
+			Name = "Load Config", Icon = "download",
+			Tooltip = "Applies every saved flag back onto the interface.",
+			Callback = function()
+				local ok, res = Library:LoadConfig(cfgName)
+				if ok then notify("Config loaded", res .. " settings restored", "success")
+				else notify("Could not load", tostring(res), "error") end
+			end
+		})
+		cfgSec:Button({
+			Name = "List Configs", Icon = "layers",
+			Tooltip = "Shows every config file the executor has stored.",
+			Callback = function()
+				local list = Library:ListConfigs()
+				notify("Saved configs", #list > 0 and table.concat(list, ", ") or "none yet")
+			end
+		})
+		cfgSec:Button({
+			Name = "Delete Config", Icon = "trash",
+			Tooltip = "Removes the file named above.",
+			Callback = function()
+				if Library:DeleteConfig(cfgName) then notify("Deleted", cfgName .. ".json")
+				else notify("Nothing deleted", "No file called " .. cfgName, "error") end
+			end
+		})
+
 		local misc = tab:Section({ Name = "Interface Actions", Icon = "wrench", Default = false })
 
 		misc:Button({
