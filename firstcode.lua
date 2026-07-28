@@ -55,48 +55,10 @@ local function Create(class, props, children)
 	return obj
 end
 
--- forward declarations: the FX layer below is defined later but referenced here
+-- forward declaration: helpers below are defined before the library table
 local Library
-local Motion = {}
 
--- properties that describe where something is, rather than what it looks like.
--- these get spring dynamics; colour and transparency keep normal easing.
-local SPRING_PROPS = {
-	Position = true, Size = true, Scale = true, Rotation = true,
-	AnchorPoint = true, CanvasPosition = true, Offset = true
-}
-
-local function presetForTween(time, style)
-	if style == Enum.EasingStyle.Back or style == Enum.EasingStyle.Elastic then return "bouncy" end
-	if style == Enum.EasingStyle.Linear then return "instant" end
-	if time <= 0.16 then return "stiff" end
-	if time <= 0.3  then return "snappy" end
-	if time <= 0.5  then return "smooth" end
-	return "gentle"
-end
-
--- Same signature as before, but layout properties are routed through the
--- spring solver so everything in the interface carries momentum.
 local function Tween(obj, time, props, style, dir)
-	if Library and Library.Springs ~= false then
-		local physical, visual, hasVisual = nil, nil, false
-		for k, v in pairs(props) do
-			if SPRING_PROPS[k] then
-				physical = physical or {}
-				physical[k] = v
-			else
-				visual = visual or {}
-				visual[k] = v
-				hasVisual = true
-			end
-		end
-		if physical then
-			Motion.to(obj, physical, presetForTween(time, style))
-			if not hasVisual then return end
-			props = visual
-		end
-	end
-
 	local t = TweenService:Create(
 		obj,
 		TweenInfo.new(time, style or Enum.EasingStyle.Quart, dir or Enum.EasingDirection.Out),
@@ -107,11 +69,14 @@ local function Tween(obj, time, props, style, dir)
 end
 
 -- ============================================
--- SPRING PHYSICS
--- Anything that should feel physical goes through here instead of
--- TweenService. Springs carry velocity, so a window you throw keeps its
+-- SPRING SOLVER
+-- Used only by window dragging and snapping, so a window you throw keeps its
 -- momentum, overshoots a little and settles instead of gliding to a stop.
+-- Everything else in the interface uses plain TweenService above.
 -- ============================================
+local Motion = {}
+
+
 local SPRING_PRESETS = {
 	instant = { s = 900, d = 62 },   -- no visible overshoot
 	stiff   = { s = 540, d = 42 },
@@ -233,12 +198,6 @@ do
 	-- Motion.to(obj, { Prop = target }, "bouncy" | { Preset =, Stiffness =, Damping =, Velocity =, OnDone = })
 	function Motion.to(obj, props, cfg)
 		local opts, stiffness, damping = resolveCfg(cfg)
-
-		if Library and Library.Springs == false then
-			Tween(obj, opts.Fallback or 0.28, props)
-			if opts.OnDone then task.delay(opts.Fallback or 0.28, opts.OnDone) end
-			return
-		end
 
 		for prop, target in pairs(props) do
 			local goal, kind = decompose(target)
@@ -386,476 +345,6 @@ local GREEN       = Color3.fromRGB(80, 220, 130)
 local RED         = Color3.fromRGB(240, 80, 90)
 local YELLOW      = Color3.fromRGB(250, 200, 80)
 local BLUE        = Color3.fromRGB(90, 160, 255)
-
--- ============================================
--- ACRYLIC  /  FROSTED GLASS
--- A composite backdrop: tinted base, drifting specular sheen, film grain
--- and a light-from-above rim. Sits behind everything inside a window and
--- reads as real frosted glass over the blurred scene.
--- ============================================
-local NOISE_TEXTURE = "rbxassetid://9968344227"
-local noiseUsable   = nil     -- nil = untested, false = asset missing
-
-local function CreateAcrylic(parent, cfg)
-	cfg = cfg or {}
-	local radius    = cfg.CornerRadius or 12
-	local tintColor = cfg.Tint or Color3.fromRGB(17, 17, 24)
-	local strength  = cfg.Strength or 1        -- 0 = invisible, 1 = full glass
-
-	local root = Create("Frame", {
-		Name = "Acrylic", Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1, ClipsDescendants = true,
-		ZIndex = cfg.ZIndex or 0, Parent = parent
-	}, { Create("UICorner", { CornerRadius = UDim.new(0, radius) }) })
-
-	-- 1. tinted glass body, brighter at the top like light falling in
-	local tint = Create("Frame", {
-		Name = "Tint", Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = tintColor, BackgroundTransparency = 0.18,
-		BorderSizePixel = 0, ZIndex = root.ZIndex, Parent = root
-	}, {
-		Create("UIGradient", {
-			Rotation = 90,
-			Color = ColorSequence.new({
-				ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-				ColorSequenceKeypoint.new(1, Color3.fromRGB(155, 158, 175))
-			}),
-			Transparency = NumberSequence.new({
-				NumberSequenceKeypoint.new(0, 0.06),
-				NumberSequenceKeypoint.new(0.55, 0.2),
-				NumberSequenceKeypoint.new(1, 0.32)
-			})
-		})
-	})
-
-	-- 2. film grain: what actually sells "frosted" rather than "translucent"
-	local grain = Create("ImageLabel", {
-		Name = "Grain", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-		Image = NOISE_TEXTURE, ImageTransparency = 0.94,
-		ScaleType = Enum.ScaleType.Tile, TileSize = UDim2.fromOffset(128, 128),
-		ZIndex = root.ZIndex + 1, Parent = root
-	})
-	if noiseUsable == false then
-		grain.Visible = false
-	elseif noiseUsable == nil then
-		task.spawn(function()
-			pcall(function() game:GetService("ContentProvider"):PreloadAsync({ grain }) end)
-			noiseUsable = grain.IsLoaded
-			grain.Visible = noiseUsable
-		end)
-	end
-
-	-- 3. diagonal specular sheen that drifts across the surface
-	local sheen = Create("Frame", {
-		Name = "Sheen", Size = UDim2.fromScale(1.6, 1.6),
-		Position = UDim2.fromScale(-0.3, -0.3),
-		BackgroundColor3 = Color3.fromRGB(255, 255, 255), BackgroundTransparency = 0,
-		BorderSizePixel = 0, ZIndex = root.ZIndex + 2, Parent = root
-	})
-	local sheenGrad = Create("UIGradient", {
-		Rotation = 118,
-		Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 1),
-			NumberSequenceKeypoint.new(0.38, 1),
-			NumberSequenceKeypoint.new(0.5, 0.955),
-			NumberSequenceKeypoint.new(0.62, 1),
-			NumberSequenceKeypoint.new(1, 1)
-		}),
-		Offset = Vector2.new(-1.2, 0), Parent = sheen
-	})
-
-	-- 4. crisp highlight along the top edge, fading out at the corners
-	local topLight = Create("Frame", {
-		Name = "TopLight", Size = UDim2.new(1, 0, 0, 1),
-		BackgroundColor3 = Color3.fromRGB(255, 255, 255), BackgroundTransparency = 0.55,
-		BorderSizePixel = 0, ZIndex = root.ZIndex + 3, Parent = root
-	}, {
-		Create("UIGradient", {
-			Transparency = NumberSequence.new({
-				NumberSequenceKeypoint.new(0, 1),
-				NumberSequenceKeypoint.new(0.28, 0.25),
-				NumberSequenceKeypoint.new(0.72, 0.25),
-				NumberSequenceKeypoint.new(1, 1)
-			})
-		})
-	})
-
-	local api = { Root = root, Tint = tint, Sheen = sheen, Grain = grain }
-
-	function api:SetStrength(v)
-		strength = math.clamp(v, 0, 1)
-		Motion.to(tint,     { BackgroundTransparency = 1 - 0.82 * strength }, "smooth")
-		Motion.to(topLight, { BackgroundTransparency = 1 - 0.45 * strength }, "smooth")
-		if grain.Visible then Motion.to(grain, { ImageTransparency = 1 - 0.06 * strength }, "smooth") end
-	end
-
-	function api:Destroy() root:Destroy() end
-
-	-- sheen drift
-	task.spawn(function()
-		local phase = math.random() * 2
-		while root.Parent do
-			local dt = RunService.RenderStepped:Wait()
-			if Library and Library.AnimatedBG == false then
-				sheen.Visible = false
-			else
-				sheen.Visible = true
-				phase = phase + dt / 11
-				if phase > 1.6 then phase = -0.6 end
-				sheenGrad.Offset = Vector2.new(phase * 2 - 1, 0)
-			end
-		end
-	end)
-
-	api:SetStrength(strength)
-	return api
-end
-
--- ============================================
--- VIEWPORT 3D
--- Real 3D geometry rendered inside the interface.
--- ============================================
-local function NewViewport(parent, cfg)
-	cfg = cfg or {}
-	local vf = Create("ViewportFrame", {
-		Name = cfg.Name or "Viewport",
-		Size = cfg.Size or UDim2.fromOffset(60, 60),
-		Position = cfg.Position or UDim2.fromOffset(0, 0),
-		BackgroundTransparency = 1,
-		Ambient = cfg.Ambient or Color3.fromRGB(140, 140, 155),
-		LightColor = cfg.LightColor or Color3.fromRGB(255, 255, 255),
-		LightDirection = cfg.LightDirection or Vector3.new(-0.4, -1, -0.6),
-		ZIndex = cfg.ZIndex or 5, Parent = parent
-	})
-	local cam = Instance.new("Camera")
-	cam.FieldOfView = cfg.FOV or 40
-	cam.Parent = vf
-	vf.CurrentCamera = cam
-	return vf, cam
-end
-
--- glowing wireframe polyhedron that slowly tumbles; no assets needed
-local function Create3DEmblem(parent, cfg)
-	cfg = cfg or {}
-	local color = cfg.Color or ACCENT
-	local vf, cam = NewViewport(parent, {
-		Name = "Emblem3D", Size = cfg.Size or UDim2.fromOffset(34, 34),
-		Position = cfg.Position, ZIndex = cfg.ZIndex or 5, FOV = 42,
-		Ambient = Color3.fromRGB(90, 90, 110)
-	})
-
-	local model = Instance.new("Model")
-	model.Name = "Emblem"
-
-	local function bar(cf, length, thickness)
-		local p = Instance.new("Part")
-		p.Anchored, p.CanCollide, p.CastShadow = true, false, false
-		p.Material  = Enum.Material.Neon
-		p.Color     = color
-		p.Size      = Vector3.new(thickness, thickness, length)
-		p.CFrame    = cf
-		p.Parent    = model
-		return p
-	end
-
-	local h, t = 0.85, 0.075
-	local edges = {}
-
-	-- 12 edges of a cube
-	for _, sx in ipairs({ -1, 1 }) do
-		for _, sy in ipairs({ -1, 1 }) do
-			edges[#edges + 1] = bar(CFrame.new(sx * h, sy * h, 0), h * 2, t)
-			edges[#edges + 1] = bar(CFrame.new(sx * h, 0, sy * h) * CFrame.Angles(math.pi / 2, 0, 0), h * 2, t)
-			edges[#edges + 1] = bar(CFrame.new(0, sx * h, sy * h) * CFrame.Angles(0, math.pi / 2, 0), h * 2, t)
-		end
-	end
-
-	-- glowing core
-	local core = Instance.new("Part")
-	core.Anchored, core.CanCollide, core.CastShadow = true, false, false
-	core.Shape    = Enum.PartType.Ball
-	core.Material = Enum.Material.Neon
-	core.Color    = color
-	core.Size     = Vector3.new(0.62, 0.62, 0.62)
-	core.CFrame   = CFrame.new()
-	core.Parent   = model
-
-	model.PrimaryPart = core
-	model.Parent = vf
-	cam.CFrame = CFrame.new(Vector3.new(0, 0, 5.4), Vector3.zero)
-
-	local api = { Viewport = vf, Model = model, Speed = cfg.Speed or 1 }
-
-	task.spawn(function()
-		local t0 = 0
-		local spin = 0
-		while vf.Parent do
-			local dt = RunService.RenderStepped:Wait()
-			if not vf.Visible or (Library and Library.Viewport3D == false) then continue end
-			t0 = t0 + dt
-			spin = spin + dt * 0.9 * api.Speed
-			local bob = math.sin(t0 * 1.6) * 0.11
-			model:PivotTo(
-				CFrame.new(0, bob, 0)
-					* CFrame.Angles(math.rad(28) + math.sin(t0 * 0.7) * 0.2, spin, math.sin(t0 * 0.45) * 0.25)
-			)
-			core.Size = Vector3.one * (0.62 + math.sin(t0 * 2.4) * 0.06)
-		end
-	end)
-
-	function api:SetColor(c)
-		color = c
-		for _, e in ipairs(edges) do e.Color = c end
-		core.Color = c
-	end
-	function api:Destroy() vf:Destroy() end
-	return api
-end
-
--- live rotating avatar; drag on it to spin manually
-local function Create3DAvatar(parent, plr, cfg)
-	cfg = cfg or {}
-	local vf, cam = NewViewport(parent, {
-		Name = "Avatar3D", Size = cfg.Size or UDim2.fromOffset(46, 46),
-		Position = cfg.Position, ZIndex = cfg.ZIndex or 6, FOV = 28,
-		Ambient = Color3.fromRGB(160, 160, 175)
-	})
-
-	local api = { Viewport = vf, Yaw = 0, Loaded = false }
-	local model
-
-	local headOnly = cfg.HeadOnly ~= false
-
-	local function frameModel(m)
-		local anchor = m:FindFirstChild("Head") or m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart")
-		if not anchor then return end
-		m.Parent = vf
-		model = m
-		api.Loaded = true
-		api.Focus = anchor.Position - Vector3.new(0, headOnly and 0 or 1.7, 0)
-	end
-
-	task.spawn(function()
-		local m
-		if plr and plr.Character then
-			local ok, clone = pcall(function()
-				plr.Character.Archivable = true
-				return plr.Character:Clone()
-			end)
-			if ok then m = clone end
-		end
-		if not m and plr then
-			local ok, res = pcall(function()
-				return Players:CreateHumanoidModelFromUserId(plr.UserId)
-			end)
-			if ok then m = res end
-		end
-		if not m then return end
-
-		for _, d in ipairs(m:GetDescendants()) do
-			if d:IsA("BasePart") then
-				d.Anchored = true
-				if d.Name == "HumanoidRootPart" then d.Transparency = 1 end
-			elseif d:IsA("LuaSourceContainer") or d:IsA("Humanoid") or d:IsA("Sound") then
-				d:Destroy()
-			end
-		end
-		frameModel(m)
-	end)
-
-	task.spawn(function()
-		local t0 = 0
-		while vf.Parent do
-			local dt = RunService.RenderStepped:Wait()
-			if not model or not vf.Visible or (Library and Library.Viewport3D == false) then continue end
-			t0 = t0 + dt
-			if not api.Dragging then api.Yaw = api.Yaw + dt * 0.55 end
-			local focus = api.Focus or Vector3.zero
-			local dist  = cfg.Distance or 3.1
-			local pos   = focus + Vector3.new(math.sin(api.Yaw) * dist, 0.15 + math.sin(t0 * 1.3) * 0.03, math.cos(api.Yaw) * dist)
-			cam.CFrame  = CFrame.lookAt(pos, focus)
-		end
-	end)
-
-	-- drag to spin
-	do
-		local dragging, lastX
-		vf.InputBegan:Connect(function(i)
-			if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-				dragging, lastX, api.Dragging = true, i.Position.X, true
-			end
-		end)
-		vf.InputEnded:Connect(function(i)
-			if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-				dragging, api.Dragging = false, false
-			end
-		end)
-		UIS.InputChanged:Connect(function(i)
-			if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
-				api.Yaw = api.Yaw - (i.Position.X - lastX) * 0.012
-				lastX = i.Position.X
-			end
-		end)
-	end
-
-	function api:Destroy() vf:Destroy() end
-	return api
-end
-
--- ============================================
--- LIVE GRAPH  (bar sparkline with rolling history)
--- ============================================
-local function CreateGraph(parent, cfg)
-	cfg = cfg or {}
-	local count   = cfg.Samples or 64
-	local invert  = cfg.Invert == true      -- true when lower values are better
-	local good    = cfg.GoodColor or GREEN
-	local mid     = cfg.MidColor or YELLOW
-	local bad     = cfg.BadColor or RED
-	local flat    = cfg.Color                -- set to force a single colour
-
-	local holder = Create("Frame", {
-		Name = "Graph", Size = cfg.Size or UDim2.new(1, 0, 0, 60),
-		Position = cfg.Position, BackgroundTransparency = cfg.BackgroundTransparency or 1,
-		BackgroundColor3 = cfg.BackgroundColor3 or Color3.fromRGB(14, 14, 20),
-		BorderSizePixel = 0, ClipsDescendants = true,
-		ZIndex = cfg.ZIndex or 5, Parent = parent
-	}, { Create("UICorner", { CornerRadius = UDim.new(0, cfg.CornerRadius or 6) }) })
-
-	local bars, values = {}, table.create(count, 0)
-	local slot = 1 / count
-
-	for i = 1, count do
-		bars[i] = Create("Frame", {
-			Name = "S" .. i, AnchorPoint = Vector2.new(0, 1),
-			Position = UDim2.new((i - 1) * slot, 0, 1, 0),
-			Size = UDim2.new(slot, -1, 0, 0),
-			BackgroundColor3 = flat or good, BackgroundTransparency = 0.15,
-			BorderSizePixel = 0, ZIndex = (cfg.ZIndex or 5) + 1, Parent = holder
-		})
-	end
-
-	local peak = Create("Frame", {
-		Name = "Peak", Size = UDim2.new(1, 0, 0, 1), AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 0, 1, 0), BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-		BackgroundTransparency = 0.75, BorderSizePixel = 0,
-		ZIndex = (cfg.ZIndex or 5) + 2, Parent = holder
-	})
-
-	local api = { Holder = holder, Min = cfg.Min or 0, Max = cfg.Max or 60, Auto = cfg.Auto ~= false }
-
-	local function colorFor(norm)
-		if flat then return flat end
-		local q = invert and (1 - norm) or norm
-		if q > 0.66 then return good end
-		if q > 0.33 then return mid:Lerp(good, (q - 0.33) / 0.33) end
-		return bad:Lerp(mid, q / 0.33)
-	end
-
-	local smoothMax = api.Max
-
-	function api:Push(v)
-		table.remove(values, 1)
-		values[count] = v
-
-		if self.Auto then
-			local hi = self.Min
-			for _, x in ipairs(values) do if x > hi then hi = x end end
-			hi = math.max(hi * 1.15, self.Min + 1)
-			smoothMax = smoothMax + (hi - smoothMax) * 0.12
-		else
-			smoothMax = self.Max
-		end
-
-		local range = math.max(smoothMax - self.Min, 0.001)
-		local avg = 0
-		for i = 1, count do
-			local norm = math.clamp((values[i] - self.Min) / range, 0, 1)
-			avg = avg + values[i]
-			bars[i].Size = UDim2.new(slot, -1, norm, 0)
-			bars[i].BackgroundColor3 = colorFor(math.clamp((values[i] - self.Min) / math.max(self.Max - self.Min, 0.001), 0, 1))
-		end
-		avg = avg / count
-		peak.Position = UDim2.new(0, 0, 1 - math.clamp((avg - self.Min) / range, 0, 1), 0)
-	end
-
-	function api:Clear()
-		for i = 1, count do values[i] = 0; bars[i].Size = UDim2.new(slot, -1, 0, 0) end
-	end
-
-	function api:Values() return values end
-	function api:Destroy() holder:Destroy() end
-	return api
-end
-
--- ============================================
--- PERFORMANCE SAMPLER  (one loop, everyone subscribes)
--- ============================================
-local Perf = {
-	FPS = 60, AvgFPS = 60, MinFPS = 60, OnePercentLow = 60,
-	Ping = 0, MemoryMB = 0, Frametime = 16.6,
-	_subs = {}, _started = false
-}
-
-function Perf.subscribe(fn)
-	table.insert(Perf._subs, fn)
-	return function()
-		for i, f in ipairs(Perf._subs) do
-			if f == fn then table.remove(Perf._subs, i); break end
-		end
-	end
-end
-
-function Perf.start()
-	if Perf._started then return end
-	Perf._started = true
-
-	local Stats = game:FindService("Stats")
-	local frames, acc = 0, 0
-	local history = {}          -- recent frame times for the 1% low
-	local slowAcc = 0
-
-	RunService.RenderStepped:Connect(function(dt)
-		frames = frames + 1
-		acc = acc + dt
-		slowAcc = slowAcc + dt
-
-		history[#history + 1] = dt
-		if #history > 600 then table.remove(history, 1) end
-
-		Perf.Frametime = Perf.Frametime + (dt * 1000 - Perf.Frametime) * 0.1
-
-		if acc >= 0.1 then
-			Perf.FPS    = frames / acc
-			Perf.AvgFPS = Perf.AvgFPS + (Perf.FPS - Perf.AvgFPS) * 0.2
-			Perf.MinFPS = math.min(Perf.MinFPS, Perf.FPS)
-			frames, acc = 0, 0
-
-			for _, fn in ipairs(Perf._subs) do
-				task.spawn(fn, Perf)
-			end
-		end
-
-		if slowAcc >= 1 then
-			slowAcc = 0
-
-			-- 1% low: mean of the worst 1% of recent frame times
-			local sorted = table.clone(history)
-			table.sort(sorted, function(a, b) return a > b end)
-			local n = math.max(1, math.floor(#sorted * 0.01))
-			local sum = 0
-			for i = 1, n do sum = sum + sorted[i] end
-			Perf.OnePercentLow = 1 / math.max(sum / n, 0.0001)
-
-			if Stats then
-				pcall(function() Perf.MemoryMB = Stats:GetTotalMemoryUsageMb() end)
-				pcall(function()
-					Perf.Ping = Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
-				end)
-			end
-		end
-	end)
-end
 
 -- ============================================
 -- ICON REGISTRY
@@ -1018,9 +507,7 @@ refreshIconTables()
 Library = {}
 Library.__index = Library
 
-Library.Springs      = true   -- spring physics instead of tweens
-Library.Acrylic      = true   -- frosted glass backdrop
-Library.Viewport3D   = true   -- 3D emblem / avatars
+Library.Snapping     = true   -- drag the window to a screen edge to snap it
 Library.ToggleKey    = Enum.KeyCode.RightControl
 Library.Flags        = {}
 Library.FlagSetters  = {}
@@ -1828,27 +1315,6 @@ local function buildPlayerPanel()
 			Create("UIStroke", { Color = teamColor, Thickness = 1.2, Transparency = 0.3 })
 		})
 
-		-- hovering a row swaps the flat headshot for a live, rotating 3D avatar
-		do
-			local live
-			row.MouseEnter:Connect(function()
-				if live or Library.Viewport3D == false then return end
-				live = Create3DAvatar(avatar, plr, {
-					Size = UDim2.fromScale(1, 1), Distance = 2.9, ZIndex = 4
-				})
-				Create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = live.Viewport })
-				live.Viewport.ImageTransparency = 1
-				Tween(live.Viewport, 0.3, { ImageTransparency = 0 })
-			end)
-			row.MouseLeave:Connect(function()
-				if not live then return end
-				local v = live
-				live = nil
-				Tween(v.Viewport, 0.15, { ImageTransparency = 1 })
-				task.delay(0.2, function() v:Destroy() end)
-			end)
-		end
-
 		local nameLbl = Create("TextLabel", {
 			Name = "PName", Text = plr.DisplayName, Font = Enum.Font.GothamBold, TextSize = 12,
 			TextColor3 = Color3.fromRGB(238, 238, 248), BackgroundTransparency = 1,
@@ -2176,120 +1642,6 @@ end
 
 function Library:IconBrowser() buildIconPanel():Show() end
 function Library:ToggleIconBrowser() buildIconPanel():Toggle() end
-
--- ============================================
--- PERFORMANCE PANEL
--- Live frame rate, ping and memory, sampled once and drawn as rolling graphs.
--- ============================================
-local PerfPanel = nil
-
-local function buildPerfPanel()
-	if PerfPanel then return PerfPanel end
-	Perf.start()
-
-	local panel = CreateFloatingPanel({
-		Name = "2t1Studio_Perf", Title = "Performance",
-		Icon = ICONS.activity or ICONS.zap, Width = 300, Height = 372,
-		Position = UDim2.new(1, -330, 0, 60)
-	})
-
-	local body = panel.Body
-
-	-- ---- headline number ----
-	local fpsBig = Create("TextLabel", {
-		Text = "60", Font = Enum.Font.GothamBold, TextSize = 34,
-		TextColor3 = Color3.fromRGB(255, 255, 255), TextXAlignment = Enum.TextXAlignment.Left,
-		BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 6),
-		Size = UDim2.fromOffset(110, 40), ZIndex = 4, Parent = body
-	})
-	Create("TextLabel", {
-		Text = "FPS", Font = Enum.Font.GothamBold, TextSize = 11,
-		TextColor3 = TXT_FADE, TextXAlignment = Enum.TextXAlignment.Left,
-		BackgroundTransparency = 1, Position = UDim2.fromOffset(15, 42),
-		Size = UDim2.fromOffset(60, 12), ZIndex = 4, Parent = body
-	})
-
-	local frameLbl = Create("TextLabel", {
-		Text = "16.6 ms", Font = Enum.Font.GothamMedium, TextSize = 12,
-		TextColor3 = TXT_DIM, TextXAlignment = Enum.TextXAlignment.Right,
-		BackgroundTransparency = 1, Position = UDim2.new(1, -110, 0, 14),
-		Size = UDim2.fromOffset(96, 16), ZIndex = 4, Parent = body
-	})
-	local lowLbl = Create("TextLabel", {
-		Text = "1% low  60", Font = Enum.Font.GothamMedium, TextSize = 11,
-		TextColor3 = TXT_FADE, TextXAlignment = Enum.TextXAlignment.Right,
-		BackgroundTransparency = 1, Position = UDim2.new(1, -110, 0, 32),
-		Size = UDim2.fromOffset(96, 14), ZIndex = 4, Parent = body
-	})
-
-	local function block(y, title, height, graphCfg)
-		local card = Create("Frame", {
-			Size = UDim2.new(1, -24, 0, height + 24), Position = UDim2.fromOffset(12, y),
-			BackgroundColor3 = Color3.fromRGB(16, 16, 23), BackgroundTransparency = 0.35,
-			BorderSizePixel = 0, ZIndex = 3, Parent = body
-		}, {
-			Create("UICorner", { CornerRadius = UDim.new(0, 8) }),
-			Create("UIStroke", { Color = STROKE, Thickness = 1, Transparency = 0.62 })
-		})
-		Create("TextLabel", {
-			Text = title, Font = Enum.Font.GothamBold, TextSize = 10,
-			TextColor3 = TXT_FADE, TextXAlignment = Enum.TextXAlignment.Left,
-			BackgroundTransparency = 1, Position = UDim2.fromOffset(9, 4),
-			Size = UDim2.new(1, -18, 0, 14), ZIndex = 5, Parent = card
-		})
-		local value = Create("TextLabel", {
-			Text = "", Font = Enum.Font.GothamBold, TextSize = 11,
-			TextColor3 = Color3.fromRGB(225, 225, 238), TextXAlignment = Enum.TextXAlignment.Right,
-			BackgroundTransparency = 1, Position = UDim2.fromOffset(9, 4),
-			Size = UDim2.new(1, -18, 0, 14), ZIndex = 5, Parent = card
-		})
-		local graph = CreateGraph(card, {
-			Size = UDim2.new(1, -14, 0, height), Position = UDim2.fromOffset(7, 20),
-			ZIndex = 4, Samples = graphCfg.Samples or 70,
-			Min = graphCfg.Min, Max = graphCfg.Max, Invert = graphCfg.Invert,
-			Color = graphCfg.Color, Auto = graphCfg.Auto
-		})
-		return graph, value
-	end
-
-	local fpsGraph,  fpsVal  = block(64,  "FRAME RATE",  74, { Min = 0, Max = 120 })
-	local pingGraph, pingVal = block(166, "PING",        44, { Min = 0, Max = 260, Invert = true })
-	local memGraph,  memVal  = block(238, "MEMORY",      44, { Min = 0, Max = 1500, Color = BLUE })
-
-	Create("TextLabel", {
-		Text = "sampled 10x per second", Font = Enum.Font.GothamMedium, TextSize = 10,
-		TextColor3 = TXT_FADE, BackgroundTransparency = 1,
-		Position = UDim2.new(0, 0, 1, -20), Size = UDim2.new(1, 0, 0, 14),
-		ZIndex = 4, Parent = body
-	})
-
-	local acc = 0
-	Perf.subscribe(function(p)
-		if not panel.Open then return end
-
-		fpsBig.Text   = tostring(math.floor(p.FPS + 0.5))
-		fpsBig.TextColor3 = p.FPS >= 50 and GREEN or (p.FPS >= 30 and YELLOW or RED)
-		frameLbl.Text = string.format("%.1f ms", p.Frametime)
-		lowLbl.Text   = string.format("1%% low  %d", math.floor(p.OnePercentLow + 0.5))
-
-		fpsGraph:Push(p.FPS)
-		fpsVal.Text  = string.format("avg %d", math.floor(p.AvgFPS + 0.5))
-
-		acc = acc + 1
-		if acc % 5 == 0 then
-			pingGraph:Push(p.Ping)
-			pingVal.Text = string.format("%d ms", math.floor(p.Ping + 0.5))
-			memGraph:Push(p.MemoryMB)
-			memVal.Text  = string.format("%d MB", math.floor(p.MemoryMB + 0.5))
-		end
-	end)
-
-	PerfPanel = panel
-	return panel
-end
-
-function Library:ShowPerformance() buildPerfPanel():Show() end
-function Library:TogglePerformance() buildPerfPanel():Toggle() end
 
 -- ============================================
 -- KEYBIND PANEL
@@ -3146,32 +2498,9 @@ function Library.SettingManager()
 			Callback = function(v) Library.AnimatedBG = v end
 		})
 		ui:Toggle({
-			Name = "Spring Physics", Icon = "move", Flag = "ui_springs", Default = true,
-			Tooltip = "Motion carries momentum and settles instead of gliding. Turn off for flat tweens.",
-			Callback = function(v) Library.Springs = v end
-		})
-		ui:Toggle({
-			Name = "Frosted Glass", Icon = "layers", Flag = "ui_acrylic", Default = true,
-			Tooltip = "Acrylic backdrop: tinted glass, drifting sheen and film grain.",
-			Callback = function(v)
-				Library.Acrylic = v
-				for _, w in ipairs(Library._windows) do
-					if w._acrylic then w._acrylic:SetStrength(v and 1 or 0) end
-				end
-			end
-		})
-		ui:Toggle({
-			Name = "3D Emblem", Icon = "box", Flag = "ui_3d", Default = true,
-			Tooltip = "Renders real 3D geometry inside the interface. Turn off on weak devices.",
-			Callback = function(v)
-				Library.Viewport3D = v
-				for _, w in ipairs(Library._windows) do
-					if w._emblem then
-						w._emblem.Viewport.Visible = v
-						if w._logoFlat then w._logoFlat.Visible = not v end
-					end
-				end
-			end
+			Name = "Window Snapping", Icon = "layout", Flag = "ui_snap", Default = true,
+			Tooltip = "Drag the window to a screen edge to snap it to half or a quarter.",
+			Callback = function(v) Library.Snapping = v end
 		})
 		ui:Toggle({
 			Name = "Tooltips", Icon = "info", Flag = "ui_tooltips", Default = true,
@@ -3203,12 +2532,6 @@ function Library.SettingManager()
 			Tooltip = "Preview every built-in icon and click one to copy its name.",
 			Callback = function() Library:ToggleIconBrowser() end
 		})
-		panels:Button({
-			Name = "Performance", Icon = "activity",
-			Tooltip = "Live frame rate, 1% lows, ping and memory as rolling graphs.",
-			Callback = function() Library:TogglePerformance() end
-		})
-
 		local misc = tab:Section({ Name = "Interface Actions", Icon = "wrench", Default = false })
 
 		misc:Button({
@@ -3497,7 +2820,7 @@ do
 				Position = UDim2.fromOffset(p.X - grabDelta.X, p.Y - grabDelta.Y)
 			})
 
-			local z = zoneAt(gui, p.X, p.Y)
+			local z = Library.Snapping ~= false and zoneAt(gui, p.X, p.Y) or nil
 			if (z and z.key) ~= (armedZone and armedZone.key) then
 				armedZone = z
 				showPreview(z)
@@ -3686,7 +3009,6 @@ do
 				Create("UICorner", { CornerRadius = UDim.new(0, 10) }),
 				Create("UIStroke", { Color = ACCENT, Thickness = 1.2, Transparency = 0.45 })
 			})
-			CreateAcrylic(ghost, { Strength = 0.85, CornerRadius = 10, ZIndex = 8 })
 
 			ghostIcon = Create("ImageLabel", {
 				Image = tab.Icon or ICONS.layout, Size = UDim2.fromOffset(14, 14),
@@ -3783,19 +3105,8 @@ do
 	end
 end
 
--- ============================================
--- PUBLIC FX SURFACE
--- The pieces the interface is built from, exposed so scripts can use them too.
--- ============================================
-Library.Motion  = Motion   -- Motion.to / .set / .impulse / .stop / .isActive
-Library.Perf    = Perf     -- Perf.start() / Perf.subscribe(fn) / live fields
-Library.Dock    = Dock     -- Dock.attach(win) / .zoneAt / .showPreview
-Library.Springs_Presets = SPRING_PRESETS
-
-function Library:Acrylify(parent, cfg) return CreateAcrylic(parent, cfg) end
-function Library:Emblem3D(parent, cfg) return Create3DEmblem(parent, cfg) end
-function Library:Avatar3D(parent, plr, cfg) return Create3DAvatar(parent, plr, cfg) end
-function Library:Graph(parent, cfg) return CreateGraph(parent, cfg) end
+-- exposed so scripts can drive the same window snapping
+Library.Dock = Dock   -- Dock.attach(win) / .zoneAt / .showPreview
 
 -- ============================================
 -- WINDOW
@@ -3824,7 +3135,7 @@ function Library:New(config)
 	})
 
 	local WIN_W, WIN_H = 600, 420
-	local MAIN_TRANS = Library.Acrylic ~= false and 0.26 or 0.06
+	local MAIN_TRANS = 0.06
 
 	self.Main = Create("Frame", {
 		Size = UDim2.fromOffset(WIN_W, WIN_H),
@@ -3838,15 +3149,6 @@ function Library:New(config)
 	local mainStroke = self.Main:FindFirstChildOfClass("UIStroke")
 	local scale = Create("UIScale", { Scale = 1, Parent = self.Main })
 	self._scale = scale
-
-	-- frosted glass sits underneath everything else in the window
-	if Library.Acrylic ~= false then
-		self._acrylic = CreateAcrylic(self.Main, {
-			CornerRadius = 12, ZIndex = 0,
-			Tint = (config.Acrylic and config.Acrylic.Tint) or Color3.fromRGB(17, 17, 24),
-			Strength = (config.Acrylic and config.Acrylic.Strength) or 1
-		})
-	end
 
 	local gridCfg = config.Grid or {}
 	CreateGridBackground(self.Main, {
@@ -3888,23 +3190,11 @@ function Library:New(config)
 	local minBtn   = makeDot(22, Color3.fromRGB(255, 189, 46), Color3.fromRGB(200, 150, 30), "Minimise")
 	local maxBtn   = makeDot(44, Color3.fromRGB(40, 205, 65),  Color3.fromRGB(30, 160, 50),  "Maximise")
 
-	local logoImg = Create("ImageLabel", {
+	local logo = Create("ImageLabel", {
 		Size = UDim2.fromOffset(30, 30), Position = UDim2.fromOffset(14, 14),
 		BackgroundTransparency = 1, Image = config.Logo or DEFAULT_LOGO,
 		ScaleType = Enum.ScaleType.Fit, ZIndex = 4, Parent = self.Top
 	})
-
-	-- a real tumbling 3D emblem stands in for the flat logo
-	local logo = logoImg
-	self._logoFlat = logoImg
-	if Library.Viewport3D ~= false and config.Emblem ~= false then
-		logoImg.Visible = false
-		self._emblem = Create3DEmblem(self.Top, {
-			Size = UDim2.fromOffset(40, 40), Position = UDim2.fromOffset(9, 9),
-			Color = config.EmblemColor or ACCENT, ZIndex = 4
-		})
-		logo = self._emblem.Viewport
-	end
 
 	local titleLbl = Create("TextLabel", {
 		Text = config.Title or "2t1 Studio", Font = Enum.Font.GothamBold, TextSize = 17,
@@ -4013,77 +3303,10 @@ function Library:New(config)
 	}, { Create("UICorner", { CornerRadius = UDim.new(1, 0) }) })
 
 	self.SidebarScroll = Create("ScrollingFrame", {
-		Size = UDim2.new(1, 0, 1, -58), BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
 		ScrollBarThickness = 0, CanvasSize = UDim2.new(0, 0, 0, 0),
 		ScrollingDirection = Enum.ScrollingDirection.Y, ZIndex = 5, Parent = self.Sidebar
 	})
-
-	-- ---------- LIVE PERFORMANCE WIDGET ----------
-	do
-		Perf.start()
-
-		local card = Create("TextButton", {
-			Name = "PerfWidget", Text = "", AutoButtonColor = false,
-			Size = UDim2.new(1, -16, 0, 46), Position = UDim2.new(0, 8, 1, -52),
-			BackgroundColor3 = Color3.fromRGB(15, 15, 22), BackgroundTransparency = 0.3,
-			ZIndex = 6, ClipsDescendants = true, Parent = self.Sidebar
-		}, {
-			Create("UICorner", { CornerRadius = UDim.new(0, 8) }),
-			Create("UIStroke", { Name = "Edge", Color = STROKE, Thickness = 1, Transparency = 0.6 })
-		})
-
-		-- the sparkline lives behind the numbers
-		local spark = CreateGraph(card, {
-			Size = UDim2.new(1, -2, 0, 24), Position = UDim2.fromOffset(1, 21),
-			Samples = 46, Min = 0, Max = 120, ZIndex = 6, CornerRadius = 7
-		})
-		for _, b in ipairs(spark.Holder:GetChildren()) do
-			if b:IsA("Frame") then b.BackgroundTransparency = 0.55 end
-		end
-
-		local fpsNum = Create("TextLabel", {
-			Text = "60", Font = Enum.Font.GothamBold, TextSize = 17,
-			TextColor3 = GREEN, TextXAlignment = Enum.TextXAlignment.Left,
-			BackgroundTransparency = 1, Position = UDim2.fromOffset(9, 4),
-			Size = UDim2.fromOffset(48, 18), ZIndex = 9, Parent = card
-		})
-		Create("TextLabel", {
-			Text = "FPS", Font = Enum.Font.GothamBold, TextSize = 9,
-			TextColor3 = TXT_FADE, TextXAlignment = Enum.TextXAlignment.Left,
-			BackgroundTransparency = 1, Position = UDim2.fromOffset(38, 8),
-			Size = UDim2.fromOffset(30, 12), ZIndex = 9, Parent = card
-		})
-		local pingNum = Create("TextLabel", {
-			Text = "0 ms", Font = Enum.Font.GothamMedium, TextSize = 11,
-			TextColor3 = TXT_DIM, TextXAlignment = Enum.TextXAlignment.Right,
-			BackgroundTransparency = 1, Position = UDim2.new(1, -58, 0, 6),
-			Size = UDim2.fromOffset(50, 14), ZIndex = 9, Parent = card
-		})
-
-		local edge = card:FindFirstChild("Edge")
-		card.MouseEnter:Connect(function()
-			Tween(card, 0.15, { BackgroundTransparency = 0.05 })
-			Tween(edge, 0.15, { Color = ACCENT, Transparency = 0.3 })
-		end)
-		card.MouseLeave:Connect(function()
-			Tween(card, 0.18, { BackgroundTransparency = 0.3 })
-			Tween(edge, 0.18, { Color = STROKE, Transparency = 0.6 })
-		end)
-		card.MouseButton1Click:Connect(function() Library:TogglePerformance() end)
-		AttachTooltip(card, "Live frame rate. Click for the full performance panel.")
-
-		local tick = 0
-		Perf.subscribe(function(p)
-			if not self.Main.Visible then return end
-			spark:Push(p.FPS)
-			fpsNum.Text = tostring(math.floor(p.FPS + 0.5))
-			fpsNum.TextColor3 = p.FPS >= 50 and GREEN or (p.FPS >= 30 and YELLOW or RED)
-			tick = tick + 1
-			if tick % 10 == 0 then
-				pingNum.Text = string.format("%d ms", math.floor(p.Ping + 0.5))
-			end
-		end)
-	end
 
 	self.TabHolder = Create("Frame", {
 		Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1, ZIndex = 5, Parent = self.SidebarScroll
@@ -5943,10 +5166,6 @@ function Library:New(config)
 			Library:IconBrowser()
 		end, ICONS.grid)
 
-		Library:RegisterCommand("Performance", "Frame rate, 1% lows, ping and memory", function()
-			Library:TogglePerformance()
-		end, ICONS.activity)
-
 		Library:RegisterCommand("Snap Window Left", "Dock the window to the left half", function()
 			local w = Library._windows[1]
 			if w and w.SnapTo then
@@ -5954,14 +5173,6 @@ function Library:New(config)
 				w:SnapTo({ x = 12, y = 48, w = (V.X - 36) / 2, h = V.Y - 84, key = "left", name = "Left half" })
 			end
 		end, ICONS.layout)
-
-		Library:RegisterCommand("Toggle Spring Physics", "Switch between spring motion and flat tweens", function()
-			Library.Springs = not Library.Springs
-			Library:Notify({
-				Title = "Motion", Type = "info", Time = 2,
-				Content = Library.Springs and "Spring physics on" or "Spring physics off"
-			})
-		end, ICONS.move)
 
 		Library:RegisterCommand("Replay Tour", "Play the walkthrough again", function()
 			Library:ResetTour()
