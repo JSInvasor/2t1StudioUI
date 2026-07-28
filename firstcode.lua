@@ -508,6 +508,8 @@ Library = {}
 Library.__index = Library
 
 Library.Snapping     = true   -- drag the window to a screen edge to snap it
+Library.Magnetic     = true   -- windows click onto each other's edges while dragging
+Library.MagneticGroups = true -- joined windows travel together
 Library.ToggleKey    = Enum.KeyCode.RightControl
 Library.Flags        = {}
 Library.FlagSetters  = {}
@@ -1016,13 +1018,18 @@ local function CreateFloatingPanel(cfg)
 
 	local panel = { Gui = gui, Main = main, Body = body, Top = top, Title = titleLbl, Open = false }
 
-	-- drag  (OnDrag / OnDragEnd let the tear-out system offer a dock target)
+	-- drag  (OnDrag / OnDragEnd let the tear-out system offer a dock target,
+	--        Adjust lets the magnet pull the panel onto another window's edge)
 	do
 		local dragging, dragStart, startPos
 		top.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1
 			or input.UserInputType == Enum.UserInputType.Touch then
+				-- resolve to pure offset first: the magnet works in screen pixels and
+				-- a scale based position would drift against it
+				main.Position = UDim2.fromOffset(main.AbsolutePosition.X, main.AbsolutePosition.Y)
 				dragging = true; dragStart = input.Position; startPos = main.Position
+				if panel.OnDragStart then panel.OnDragStart(startPos.X.Offset, startPos.Y.Offset) end
 				input.Changed:Connect(function()
 					if input.UserInputState == Enum.UserInputState.End and dragging then
 						dragging = false
@@ -1035,8 +1042,9 @@ local function CreateFloatingPanel(cfg)
 			if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
 			or input.UserInputType == Enum.UserInputType.Touch) then
 				local d = input.Position - dragStart
-				main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X,
-					startPos.Y.Scale, startPos.Y.Offset + d.Y)
+				local nx, ny = startPos.X.Offset + d.X, startPos.Y.Offset + d.Y
+				if panel.Adjust then nx, ny = panel.Adjust(nx, ny) end
+				main.Position = UDim2.fromOffset(nx, ny)
 				if panel.OnDrag then panel.OnDrag(input.Position) end
 			end
 		end)
@@ -2503,6 +2511,11 @@ function Library.SettingManager()
 			Callback = function(v) Library.Snapping = v end
 		})
 		ui:Toggle({
+			Name = "Magnetic Windows", Icon = "link", Flag = "ui_magnet", Default = true,
+			Tooltip = "Windows click onto each other's edges, and joined ones move together.",
+			Callback = function(v) Library.Magnetic = v end
+		})
+		ui:Toggle({
 			Name = "Tooltips", Icon = "info", Flag = "ui_tooltips", Default = true,
 			Tooltip = "The hint boxes you are reading right now.",
 			Callback = function(v) Library.TooltipsOn = v end
@@ -2577,7 +2590,7 @@ do
 	local EDGE  = 36    -- how close to an edge a cursor must be to arm a zone
 	local INSET = 36    -- keep clear of the Roblox topbar
 
-	local overlayGui, preview, previewLabel
+	local overlayGui, preview, previewLabel, guideV, guideH
 
 	local function ensureOverlay()
 		if overlayGui and overlayGui.Parent then return end
@@ -2602,6 +2615,19 @@ do
 			BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1),
 			ZIndex = 4, Parent = preview
 		})
+
+		-- alignment guides drawn when one window clicks onto another
+		guideV = Create("Frame", {
+			Name = "GuideV", BackgroundColor3 = ACCENT, BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(0.5, 0), BorderSizePixel = 0,
+			Size = UDim2.fromOffset(2, 0), Visible = false, ZIndex = 6, Parent = overlayGui
+		}, { Create("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+
+		guideH = Create("Frame", {
+			Name = "GuideH", BackgroundColor3 = ACCENT, BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(0, 0.5), BorderSizePixel = 0,
+			Size = UDim2.fromOffset(0, 2), Visible = false, ZIndex = 6, Parent = overlayGui
+		}, { Create("UICorner", { CornerRadius = UDim.new(1, 0) }) })
 	end
 
 	local function viewport(gui)
@@ -2696,6 +2722,164 @@ do
 
 	Dock.inside = inside
 
+	-- ============================================
+	-- MAGNETIC WINDOWS
+	-- Every window the library owns is registered here. Drag one near another and
+	-- their edges click together with an alignment guide; windows already joined
+	-- travel as one cluster. Nothing is reparented, it is all pixel bookkeeping.
+	-- ============================================
+	local MAG   = 15    -- how close two edges must be before they click together
+	local TOUCH = 4     -- edges this close count as joined, so they move together
+
+	local registry = setmetatable({}, { __mode = "k" })   -- frame -> true
+
+	function Dock.register(frame)   registry[frame] = true end
+	function Dock.unregister(frame) registry[frame] = nil  end
+
+	local function alive(frame)
+		if not frame.Parent or not frame.Visible then return false end
+		local g = frame:FindFirstAncestorWhichIsA("ScreenGui")
+		return (not g) or g.Enabled
+	end
+
+	local guideOn = {}
+	local function showGuides(v, h)
+		ensureOverlay()
+		local function apply(bar, g, key, vertical)
+			if not g then
+				if guideOn[key] then
+					guideOn[key] = nil
+					Tween(bar, 0.14, { BackgroundTransparency = 1 })
+					task.delay(0.18, function()
+						if not guideOn[key] then bar.Visible = false end
+					end)
+				end
+				return
+			end
+			local first = not guideOn[key]
+			guideOn[key] = true
+			bar.Visible = true
+			if vertical then
+				bar.Position = UDim2.fromOffset(g.pos, g.from)
+				bar.Size     = UDim2.fromOffset(2, g.to - g.from)
+			else
+				bar.Position = UDim2.fromOffset(g.from, g.pos)
+				bar.Size     = UDim2.fromOffset(g.to - g.from, 2)
+			end
+			if first then Tween(bar, 0.12, { BackgroundTransparency = 0.15 }) end
+		end
+		apply(guideV, v, "v", true)
+		apply(guideH, h, "h", false)
+	end
+
+	Dock.showGuides = showGuides
+
+	-- Pull a window's top-left onto the nearest edge of any other window. Each
+	-- candidate carries the coordinate its guide line should be drawn at, so an
+	-- edge-to-edge join and a left-edges-aligned join are handled the same way.
+	local function magnet(self, x, y, w, h, skip)
+		if Library.Magnetic == false then
+			showGuides(nil)
+			return x, y
+		end
+
+		local bestX, bestY = MAG + 1, MAG + 1
+		local nx, ny = x, y
+		local gv, gh
+
+		for frame in pairs(registry) do
+			if frame ~= self and not (skip and skip[frame]) and alive(frame) then
+				local ox, oy, ow, oh = rectOf(frame)
+
+				if y < oy + oh + MAG and y + h > oy - MAG then
+					for _, c in ipairs({
+						{ ox - w, ox }, { ox + ow, ox + ow }, { ox, ox }, { ox + ow - w, ox + ow }
+					}) do
+						local d = math.abs(c[1] - x)
+						if d < bestX then
+							bestX, nx = d, c[1]
+							gv = { pos = c[2], from = math.min(y, oy), to = math.max(y + h, oy + oh) }
+						end
+					end
+				end
+
+				if x < ox + ow + MAG and x + w > ox - MAG then
+					for _, c in ipairs({
+						{ oy - h, oy }, { oy + oh, oy + oh }, { oy, oy }, { oy + oh - h, oy + oh }
+					}) do
+						local d = math.abs(c[1] - y)
+						if d < bestY then
+							bestY, ny = d, c[1]
+							gh = { pos = c[2], from = math.min(x, ox), to = math.max(x + w, ox + ow) }
+						end
+					end
+				end
+			end
+		end
+
+		if bestX > MAG then nx, gv = x, nil end
+		if bestY > MAG then ny, gh = y, nil end
+
+		-- extend each guide over the snapped rectangle, not the cursor's
+		if gv then
+			gv.from = math.min(gv.from, ny) - 10
+			gv.to   = math.max(gv.to, ny + h) + 10
+		end
+		if gh then
+			gh.from = math.min(gh.from, nx) - 10
+			gh.to   = math.max(gh.to, nx + w) + 10
+		end
+
+		showGuides(gv, gh)
+		return nx, ny
+	end
+
+	Dock.magnet = magnet
+
+	-- flood fill outwards from a window across every edge it is already touching
+	local function collectGroup(root, out)
+		out[root] = true
+		local x, y, w, h = rectOf(root)
+		for frame in pairs(registry) do
+			if not out[frame] and alive(frame) then
+				local ox, oy, ow, oh = rectOf(frame)
+				local sideBySide = (math.abs(ox - (x + w)) <= TOUCH or math.abs(x - (ox + ow)) <= TOUCH)
+					and y < oy + oh and y + h > oy
+				local stacked = (math.abs(oy - (y + h)) <= TOUCH or math.abs(y - (oy + oh)) <= TOUCH)
+					and x < ox + ow and x + w > ox
+				if sideBySide or stacked then collectGroup(frame, out) end
+			end
+		end
+		return out
+	end
+
+	-- snapshot the cluster so it can be translated by one delta without drifting
+	local function beginGroup(root)
+		local set = { [root] = true }
+		local list = {}
+		if Library.Magnetic ~= false and Library.MagneticGroups ~= false then
+			set = collectGroup(root, {})
+			for frame in pairs(set) do
+				if frame ~= root then
+					Motion.stop(frame, "Position")
+					list[#list + 1] = { frame = frame, base = frame.Position }
+				end
+			end
+		end
+		return { list = list, set = set }
+	end
+
+	local function moveGroup(g, dx, dy)
+		if not g then return end
+		for _, m in ipairs(g.list) do
+			m.frame.Position = UDim2.new(m.base.X.Scale, m.base.X.Offset + dx,
+			                             m.base.Y.Scale, m.base.Y.Offset + dy)
+		end
+	end
+
+	Dock.beginGroup = beginGroup
+	Dock.moveGroup  = moveGroup
+
 	-- ---------- window dragging with snap + throw ----------
 	function Dock.attach(win)
 		local main, gui, top = win.Main, win.Gui, win.Top
@@ -2703,8 +2887,11 @@ do
 		win._floatSize = main.Size
 		win._snapped   = nil
 
+		Dock.register(main)
+
 		local dragging, armedZone
 		local dragStart, startOff, curOff          -- everything below is pure offset space
+		local group, groupOrigin
 		local lastP, lastT, vel = nil, 0, Vector2.zero
 
 		-- Position may be scale based; resolve it to the equivalent offset so the drag
@@ -2776,6 +2963,9 @@ do
 			dragStart = Vector2.new(input.Position.X, input.Position.Y)
 			Motion.set(main, { Position = UDim2.fromOffset(curOff.X, curOff.Y) })
 
+			-- anything already stuck to this window comes along for the ride
+			group, groupOrigin = beginGroup(main), curOff
+
 			-- if it was snapped, remember where along the title bar we grabbed it
 			if win._snapped then
 				local x, y, w = rectOf(main)
@@ -2786,6 +2976,8 @@ do
 			input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End and dragging then
 					dragging = false
+					group = nil
+					showGuides(nil)
 
 					if armedZone then
 						win:SnapTo(armedZone)
@@ -2837,16 +3029,31 @@ do
 				startOff  = Vector2.new(p.X - (u.grip - 0.5) * u.floatW,
 				                        (curOff.Y - h / 2) + floatH / 2)
 				dragStart = Vector2.new(p.X, p.Y)
+				group     = nil   -- it was welded to a screen edge, not to other windows
 			end
 
-			curOff = Vector2.new(startOff.X + (p.X - dragStart.X),
-			                     startOff.Y + (p.Y - dragStart.Y))
-			Motion.set(main, { Position = UDim2.fromOffset(curOff.X, curOff.Y) })
+			local rawX = startOff.X + (p.X - dragStart.X)
+			local rawY = startOff.Y + (p.Y - dragStart.Y)
 
 			local z = Library.Snapping ~= false and zoneAt(gui, p.X, p.Y) or nil
 			if (z and z.key) ~= (armedZone and armedZone.key) then
 				armedZone = z
 				showPreview(z)
+			end
+
+			-- a screen zone wins over the magnet, otherwise click onto other windows
+			local _, _, w, h = rectOf(main)
+			if armedZone then
+				showGuides(nil)
+			else
+				local tlx, tly = magnet(main, rawX - w / 2, rawY - h / 2, w, h, group and group.set)
+				rawX, rawY = tlx + w / 2, tly + h / 2
+			end
+
+			curOff = Vector2.new(rawX, rawY)
+			Motion.set(main, { Position = UDim2.fromOffset(curOff.X, curOff.Y) })
+			if groupOrigin then
+				moveGroup(group, curOff.X - groupOrigin.X, curOff.Y - groupOrigin.Y)
 			end
 		end)
 	end
@@ -2917,6 +3124,8 @@ do
 
 			if placeholder then placeholder.Visible = false end
 			setRowPopped(false)
+			Dock.unregister(panel.Main)
+			showGuides(nil)
 			panel.Gui:Destroy()
 			tab.Select()
 		end
@@ -2967,24 +3176,55 @@ do
 			end)
 			dockBtn.MouseButton1Click:Connect(redock)
 
-			-- dragging it back over the main window offers a dock target
-			local hovering = false
+			-- this window joins the magnet network: it clicks onto the main window
+			-- and onto other popped tabs, and drags whatever is stuck to it
+			Dock.register(panel.Main)
+
+			local group, originX, originY
+			panel.OnDragStart = function(sx, sy)
+				group, originX, originY = Dock.beginGroup(panel.Main), sx, sy
+			end
+			panel.Adjust = function(x, y)
+				local _, _, pw, ph = rectOf(panel.Main)
+				local nx, ny = magnet(panel.Main, x, y, pw, ph, group and group.set)
+				Dock.moveGroup(group, nx - originX, ny - originY)
+				return nx, ny
+			end
+
+			-- dragging it back over the main window offers a dock target. Over the
+			-- sidebar it shows the exact row the tab will drop into, anywhere else
+			-- in the window it offers the whole thing.
+			local target
+			local function setTarget(t)
+				if t == target then return end
+				target = t
+				if t == "row" then
+					local x, y, ww, hh = rectOf(tab.Row)
+					showPreview({ x = x - 3, y = y - 3, w = ww + 6, h = hh + 6,
+						key = "redock_row", name = "" })
+				elseif t == "window" then
+					local x, y, ww, hh = rectOf(win.Main)
+					showPreview({ x = x, y = y, w = ww, h = hh, key = "redock", name = "Dock back in" })
+				else
+					showPreview(nil)
+				end
+			end
+
 			panel.OnDrag = function(pp)
-				local over = win.Main.Visible and inside(pp.X, pp.Y, win.Main, -20)
-				if over ~= hovering then
-					hovering = over
-					if over then
-						local x, y, ww, hh = rectOf(win.Main)
-						showPreview({ x = x, y = y, w = ww, h = hh, key = "redock", name = "Dock back in" })
-					else
-						showPreview(nil)
-					end
+				if not win.Main.Visible then return setTarget(nil) end
+				if inside(pp.X, pp.Y, win.Sidebar, 8) then
+					setTarget("row")
+				elseif inside(pp.X, pp.Y, win.Main, -20) then
+					setTarget("window")
+				else
+					setTarget(nil)
 				end
 			end
 			panel.OnDragEnd = function()
-				if hovering then
-					hovering = false
-					showPreview(nil)
+				showGuides(nil)
+				group = nil
+				if target then
+					setTarget(nil)
 					redock()
 				end
 			end
